@@ -385,8 +385,8 @@ function goToDocument() {
     try {
       // Load page image and annotations
       const [pageRes, emojiRes] = await Promise.all([
-        fetch(`/page/${pageId}.json`),
-        fetch(`/page/${pageId}/reaction`)
+        fetch(`${window.BASE_PATH || ''}/page/${pageId}.json`),
+        fetch(`${window.BASE_PATH || ''}/page/${pageId}/reaction`)
       ]);
       
       if (!pageRes.ok) throw new Error('Failed to load page');
@@ -557,7 +557,7 @@ function goToDocument() {
   async function saveAnnotation(annotation) {
     try {
       const pageId = pages[currentPage].id;
-      const response = await fetch(`/page/${pageId}/annotate`, {
+      const response = await fetch(`${window.BASE_PATH || ''}/page/${pageId}/annotate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -580,7 +580,7 @@ function goToDocument() {
   
   async function deleteAnnotation(annotationId) {
     try {
-      const response = await fetch(`/annotations/${annotationId}`, {
+      const response = await fetch(`${window.BASE_PATH || ''}/annotations/${annotationId}`, {
         method: 'DELETE'
       });
       
@@ -685,7 +685,7 @@ function goToDocument() {
     // Save reaction
     try {
       const pageId = pages[currentPage].id;
-      const response = await fetch(`/page/${pageId}/reaction`, {
+      const response = await fetch(`${window.BASE_PATH || ''}/page/${pageId}/reaction`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

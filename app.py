@@ -21,6 +21,41 @@ app = Flask(__name__)
 app.config["SECRET_KEY"] = "dev-key"
 app.config["DATABASE_URL"] = f"sqlite:///{BASE_DIR / 'app.db'}"
 
+# Support for running behind a reverse proxy with URL prefix
+# Set SCRIPT_NAME environment variable to the prefix (e.g., /Annotation_Tool)
+# For local development, leave unset or set to empty string
+script_name = os.environ.get('SCRIPT_NAME', '')
+if script_name:
+    # Ensure it starts with / and doesn't end with /
+    script_name = '/' + script_name.strip('/')
+    app.config['APPLICATION_ROOT'] = script_name
+    
+    # Create a middleware to inject SCRIPT_NAME into the WSGI environment
+    class ScriptNameMiddleware:
+        def __init__(self, app, script_name):
+            self.app = app
+            self.script_name = script_name
+        
+        def __call__(self, environ, start_response):
+            # Set SCRIPT_NAME in the WSGI environment
+            environ['SCRIPT_NAME'] = self.script_name
+            # Adjust PATH_INFO to remove the prefix
+            if environ.get('PATH_INFO', '').startswith(self.script_name):
+                environ['PATH_INFO'] = environ['PATH_INFO'][len(self.script_name):]
+            return self.app(environ, start_response)
+    
+    app.wsgi_app = ScriptNameMiddleware(app.wsgi_app, script_name)
+    
+    # Store script_name in app config for use in templates
+    app.config['SCRIPT_NAME'] = script_name
+else:
+    app.config['SCRIPT_NAME'] = ''
+
+# Make SCRIPT_NAME available to all templates
+@app.context_processor
+def inject_script_name():
+    return {'script_name': app.config.get('SCRIPT_NAME', '')}
+
 # --- DB setup (vanilla SQLAlchemy Core for brevity) ---
 engine = create_engine(app.config["DATABASE_URL"], future=True)
 

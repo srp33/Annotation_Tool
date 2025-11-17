@@ -44,7 +44,7 @@
 
       <div style="position:relative; display:inline-block;">
         <img id="page-img"
-             src="/static/images/{{ page.image_path }}"
+             src="{{ url_for('serve_image', rel=page.image_path) }}"
              class="page-image">
         {% if user['role'] == 'student' %}
         <canvas id="annot-canvas" style="position:absolute; left:0; top:0; pointer-events: auto;"></canvas>
@@ -371,7 +371,7 @@
   }
 
   function deleteAnnotation(id) {
-    fetch(`/annotations/${id}`, { method: 'DELETE' })
+    fetch(`${window.BASE_PATH || ''}/annotations/${id}`, { method: 'DELETE' })
       .then(r => r.json())
       .then(resp => { if (resp.status === 'success') location.reload(); });
   }
@@ -408,7 +408,7 @@
       if (!btn) return;
       const emoji = btn.dataset.emoji;
       const newEmoji = emoji === currentEmoji ? null : emoji;
-      fetch(`/page/${pageId}/reaction`, {
+      fetch(`${window.BASE_PATH || ''}/page/${pageId}/reaction`, {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
         body: JSON.stringify({emoji: newEmoji})

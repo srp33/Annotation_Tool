@@ -11,3 +11,4 @@ else
     echo "Container may not have been running"
 fi
 
+docker system prune -f

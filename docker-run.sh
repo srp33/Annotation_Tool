@@ -31,6 +31,7 @@ docker run -d \
     -v "$(pwd)/images:/app/images" \
     -e FLASK_APP=app.py \
     -e FLASK_ENV=production \
+    -e SCRIPT_NAME=/Annotation_Tool \
     --restart unless-stopped \
     pdf-annotator:latest
 

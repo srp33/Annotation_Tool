@@ -4,6 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{{ title or "Home" }}</title>
+  <!-- Base path for URL prefix support -->
+  <script>
+    window.BASE_PATH = "{{ script_name }}";
+  </script>
   <!-- Bulma CDN -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.2/css/bulma.min.css">
   <!-- Font Awesome for icons -->

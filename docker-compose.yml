@@ -15,5 +15,6 @@ services:
     environment:
       - FLASK_APP=app.py
       - FLASK_ENV=production
+      - SCRIPT_NAME=/Annotation_Tool
     restart: unless-stopped
 
