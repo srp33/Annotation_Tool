@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="level mb-4">
+  <div class="level-left">
+    <div class="level-item">
+      <h2 class="title is-4">Assign Document: {{ doc.filename }}</h2>
+    </div>
+  </div>
+  <div class="level-right">
+    <div class="level-item">
+      <a href="{{ url_for('document', doc_id=doc.id) }}" class="button is-light">Back to Document</a>
+    </div>
+  </div>
+</div>
+
+<div class="box">
+  <form method="POST" action="{{ url_for('assign_document', doc_id=doc.id) }}">
+    <p class="mb-4">Select students to assign this document to:</p>
+    
+    {% if students %}
+    <div class="field">
+      {% for student in students %}
+      <div class="control mb-2">
+        <label class="checkbox">
+          <input type="checkbox" name="student_ids" value="{{ student.id }}" 
+                 {% if student.id in assigned_ids %}checked{% endif %}>
+          {{ student.username }}
+        </label>
+      </div>
+      {% endfor %}
+    </div>
+    
+    <div class="field">
+      <div class="control">
+        <button class="button is-primary" type="submit">Save Assignments</button>
+        <a href="{{ url_for('document', doc_id=doc.id) }}" class="button is-light ml-2">Cancel</a>
+      </div>
+    </div>
+    {% else %}
+    <p class="has-text-grey">No students available. <a href="{{ url_for('create_user') }}">Create a student account</a> first.</p>
+    {% endif %}
+  </form>
+</div>
+
+{% endblock %}
+

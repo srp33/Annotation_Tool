@@ -1,0 +1,435 @@
+{% extends "base.html" %}
+{% block content %}
+<!-- Debug: User role is {{ user['role'] }} -->
+<div class="box">
+  <!-- Navigation buttons at the top -->
+  <div class="level mb-4">
+    <div class="level-left">
+      <div class="level-item">
+        <div class="buttons">
+          <a class="button is-light" href="{{ url_for('index') }}">Document List</a>
+          <a class="button is-light" href="{{ url_for('document', doc_id=page.document_id) }}">Page List</a>
+          {% if prev_page_id %}
+          <a class="button is-light" href="{{ url_for('page', page_id=prev_page_id) }}">← Previous</a>
+          {% endif %}
+          {% if next_page_id %}
+          <a class="button is-light" href="{{ url_for('page', page_id=next_page_id) }}">Next →</a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="level-right">
+      <div class="level-item">
+        <p class="has-text-grey">Page {{ page.page_index + 1 }}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="columns">
+
+    <!-- LEFT: Canvas and tools -->
+    <div class="column is-two-thirds">
+      {% if user['role'] == 'student' %}
+      <div class="toolbar mb-4">
+        <div class="buttons">
+          <button class="button is-link is-outlined" id="tool-rect">Rectangle</button>
+          <button class="button is-warning is-outlined" id="tool-line">Line</button>
+          <input class="input" id="text-input" type="text" placeholder="Type text, then click on canvas" style="max-width:280px">
+          <button class="button is-info is-outlined" id="tool-text">Text</button>
+          <input class="input" id="color-input" type="color" value="#000000" style="max-width:120px">
+          <button class="button is-danger is-outlined" id="tool-delete">Delete</button>
+        </div>
+      </div>
+      {% endif %}
+
+      <div style="position:relative; display:inline-block;">
+        <img id="page-img"
+             src="/static/images/{{ page.image_path }}"
+             class="page-image">
+        {% if user['role'] == 'student' %}
+        <canvas id="annot-canvas" style="position:absolute; left:0; top:0; pointer-events: auto;"></canvas>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- RIGHT: Emoji panel -->
+    <div class="column is-one-third">
+      {% if user['role'] == 'student' %}
+      <h2 class="title is-5">How are you feeling on this page?</h2>
+      <p class="mb-3 has-text-grey">Select one emotion. Only one can be active.</p>
+
+      <div id="emoji-panel" class="is-flex is-flex-wrap-wrap" style="gap:.75rem;">
+        <button class="button is-light emoji-btn" data-emoji="🤩" title="Excited">
+          <div style="display:flex;flex-direction:column;align-items:center;line-height:1;">
+            <span style="font-size:1.6rem;">🤩</span>
+            <span style="font-size:.8rem;">Excited</span>
+          </div>
+        </button>
+        <button class="button is-light emoji-btn" data-emoji="🙂" title="Okay/Happy">
+          <div style="display:flex;flex-direction:column;align-items:center;line-height:1;">
+            <span style="font-size:1.6rem;">🙂</span>
+            <span style="font-size:.8rem;">Okay</span>
+          </div>
+        </button>
+        <button class="button is-light emoji-btn" data-emoji="😕" title="Confused">
+          <div style="display:flex;flex-direction:column;align-items:center;line-height:1;">
+            <span style="font-size:1.6rem;">😕</span>
+            <span style="font-size:.8rem;">Confused</span>
+          </div>
+        </button>
+        <button class="button is-light emoji-btn" data-emoji="😤" title="Frustrated">
+          <div style="display:flex;flex-direction:column;align-items:center;line-height:1;">
+            <span style="font-size:1.6rem;">😤</span>
+            <span style="font-size:.8rem;">Frustrated</span>
+          </div>
+        </button>
+        <button class="button is-light emoji-btn" data-emoji="😢" title="Overwhelmed">
+          <div style="display:flex;flex-direction:column;align-items:center;line-height:1;">
+            <span style="font-size:1.6rem;">😢</span>
+            <span style="font-size:.8rem;">Overwhelmed</span>
+          </div>
+        </button>
+        <button class="button is-light emoji-btn" data-emoji="😴" title="Bored/Tired">
+          <div style="display:flex;flex-direction:column;align-items:center;line-height:1;">
+            <span style="font-size:1.6rem;">😴</span>
+            <span style="font-size:.8rem;">Bored</span>
+          </div>
+        </button>
+      </div>
+      {% else %}
+      <h2 class="title is-5">Student Emotions</h2>
+      <p class="mb-3 has-text-grey">Emotion counts for this page:</p>
+
+      <div class="box">
+        <div class="content">
+          <div class="level mb-3">
+            <div class="level-left">
+              <div class="level-item">
+                <span style="font-size:1.6rem;">🤩</span>
+              </div>
+              <div class="level-item">
+                <span><strong>Excited</strong></span>
+              </div>
+            </div>
+            <div class="level-right">
+              <div class="level-item">
+                <span class="tag is-primary is-medium">{{ emotion_counts.get('🤩', 0) }}</span>
+              </div>
+            </div>
+          </div>
+          
+          <div class="level mb-3">
+            <div class="level-left">
+              <div class="level-item">
+                <span style="font-size:1.6rem;">🙂</span>
+              </div>
+              <div class="level-item">
+                <span><strong>Okay</strong></span>
+              </div>
+            </div>
+            <div class="level-right">
+              <div class="level-item">
+                <span class="tag is-primary is-medium">{{ emotion_counts.get('🙂', 0) }}</span>
+              </div>
+            </div>
+          </div>
+          
+          <div class="level mb-3">
+            <div class="level-left">
+              <div class="level-item">
+                <span style="font-size:1.6rem;">😕</span>
+              </div>
+              <div class="level-item">
+                <span><strong>Confused</strong></span>
+              </div>
+            </div>
+            <div class="level-right">
+              <div class="level-item">
+                <span class="tag is-primary is-medium">{{ emotion_counts.get('😕', 0) }}</span>
+              </div>
+            </div>
+          </div>
+          
+          <div class="level mb-3">
+            <div class="level-left">
+              <div class="level-item">
+                <span style="font-size:1.6rem;">😤</span>
+              </div>
+              <div class="level-item">
+                <span><strong>Frustrated</strong></span>
+              </div>
+            </div>
+            <div class="level-right">
+              <div class="level-item">
+                <span class="tag is-primary is-medium">{{ emotion_counts.get('😤', 0) }}</span>
+              </div>
+            </div>
+          </div>
+          
+          <div class="level mb-3">
+            <div class="level-left">
+              <div class="level-item">
+                <span style="font-size:1.6rem;">😢</span>
+              </div>
+              <div class="level-item">
+                <span><strong>Overwhelmed</strong></span>
+              </div>
+            </div>
+            <div class="level-right">
+              <div class="level-item">
+                <span class="tag is-primary is-medium">{{ emotion_counts.get('😢', 0) }}</span>
+              </div>
+            </div>
+          </div>
+          
+          <div class="level mb-3">
+            <div class="level-left">
+              <div class="level-item">
+                <span style="font-size:1.6rem;">😴</span>
+              </div>
+              <div class="level-item">
+                <span><strong>Bored</strong></span>
+              </div>
+            </div>
+            <div class="level-right">
+              <div class="level-item">
+                <span class="tag is-primary is-medium">{{ emotion_counts.get('😴', 0) }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+  </div>
+</div>
+
+<style>
+  .emoji-btn.is-selected { box-shadow: 0 0 0 2px #485fc7 inset; }
+</style>
+
+{% if user['role'] == 'student' %}
+<script>
+  const pageId = {{ page.id }};
+  const existing = {{ annotations|tojson }};
+  let currentEmoji = {{ (current_emoji or 'null')|tojson }};
+
+  const img = document.getElementById('page-img');
+  const canvas = document.getElementById('annot-canvas');
+  const ctx = canvas.getContext('2d');
+
+  const toolRectBtn = document.getElementById('tool-rect');
+  const toolTextBtn = document.getElementById('tool-text');
+  const toolLineBtn = document.getElementById('tool-line');
+  const deleteBtn   = document.getElementById('tool-delete');
+  const textInput = document.getElementById('text-input');
+  const colorInput = document.getElementById('color-input');
+
+  let tool = 'rect';
+  let drawing = false;
+  let startX = 0, startY = 0;
+
+  function setActiveTool(selectedTool) {
+    tool = selectedTool;
+    // Remove active class and add outlined class to all buttons
+    [toolRectBtn, toolTextBtn, toolLineBtn, deleteBtn].forEach(btn => {
+      btn.classList.remove('is-active');
+      btn.classList.add('is-outlined');
+    });
+    // Add active class and remove outlined class from selected button
+    if (tool === 'rect') {
+      toolRectBtn.classList.add('is-active');
+      toolRectBtn.classList.remove('is-outlined');
+      canvas.style.cursor = 'crosshair';
+    } else if (tool === 'text') {
+      toolTextBtn.classList.add('is-active');
+      toolTextBtn.classList.remove('is-outlined');
+      canvas.style.cursor = 'crosshair';
+    } else if (tool === 'line') {
+      toolLineBtn.classList.add('is-active');
+      toolLineBtn.classList.remove('is-outlined');
+      canvas.style.cursor = 'crosshair';
+    } else if (tool === 'delete') {
+      deleteBtn.classList.add('is-active');
+      deleteBtn.classList.remove('is-outlined');
+      canvas.style.cursor = 'pointer';
+    }
+  }
+
+  toolRectBtn.onclick = () => setActiveTool('rect');
+  toolTextBtn.onclick = () => setActiveTool('text');
+  toolLineBtn.onclick = () => setActiveTool('line');
+  deleteBtn.onclick = () => setActiveTool('delete');
+  
+  // Set initial active tool
+  setActiveTool('rect');
+
+  function resizeCanvasToImage() {
+    canvas.width = img.clientWidth;
+    canvas.height = img.clientHeight;
+    redraw();
+  }
+  img.addEventListener('load', resizeCanvasToImage);
+  window.addEventListener('resize', resizeCanvasToImage);
+  if (img.complete) resizeCanvasToImage();
+
+  function drawAnnotation(a) {
+    const color = a.color || '#000000';
+    ctx.strokeStyle = color;
+    // Increased transparency: 15 hex = ~8% opacity (was 40 = 25% opacity)
+    ctx.fillStyle = a.kind === 'rect' ? `${color}15` : color;
+    ctx.lineWidth = 2;
+
+    if (a.kind === 'rect') {
+      ctx.beginPath();
+      ctx.rect(a.x, a.y, a.w, a.h);
+      ctx.fill();
+      ctx.stroke();
+    } else if (a.kind === 'text') {
+      ctx.font = '16px sans-serif';
+      ctx.fillText(a.text || '', a.x, a.y);
+    } else if (a.kind === 'line') {
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(a.x + a.w, a.y + a.h);
+      ctx.stroke();
+    }
+  }
+
+  function redraw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    existing.forEach(drawAnnotation);
+  }
+
+  canvas.addEventListener('mousedown', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    if (tool === 'rect' || tool === 'line') {
+      drawing = true;
+      startX = x;
+      startY = y;
+    } else if (tool === 'text') {
+      const txt = textInput.value.trim();
+      if (!txt) return;
+      saveAnnotation({ kind: 'text', x, y, text: txt, color: colorInput.value });
+    } else if (tool === 'delete') {
+      const id = hitTest(x, y);
+      if (id != null) deleteAnnotation(id);
+    }
+  });
+
+  canvas.addEventListener('mousemove', (e) => {
+    if (!drawing || (tool !== 'rect' && tool !== 'line')) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    redraw();
+    ctx.strokeStyle = colorInput.value;
+    ctx.lineWidth = 2;
+    if (tool === 'rect') ctx.strokeRect(startX, startY, x - startX, y - startY);
+    if (tool === 'line') {
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+    }
+  });
+
+  canvas.addEventListener('mouseup', (e) => {
+    if (!drawing) return;
+    drawing = false;
+    const rect = canvas.getBoundingClientRect();
+    const endX = e.clientX - rect.left;
+    const endY = e.clientY - rect.top;
+    const w = endX - startX;
+    const h = endY - startY;
+
+    if (Math.abs(w) < 3 && Math.abs(h) < 3) return;
+    const payload = { kind: tool, x: startX, y: startY, w, h, color: colorInput.value };
+    saveAnnotation(payload);
+  });
+
+  function saveAnnotation(payload) {
+    fetch(`{{ url_for('annotate', page_id=page.id) }}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).then(r => r.json()).then(resp => {
+      if (resp.id) {
+        // Add to existing array and redraw
+        existing.push(resp);
+        redraw();
+      }
+    }).catch(err => {
+      console.error('Error saving annotation:', err);
+      alert('Failed to save annotation');
+    });
+  }
+
+  function deleteAnnotation(id) {
+    fetch(`/annotations/${id}`, { method: 'DELETE' })
+      .then(r => r.json())
+      .then(resp => { if (resp.status === 'success') location.reload(); });
+  }
+
+  function hitTest(x, y) {
+    for (let i = existing.length - 1; i >= 0; i--) {
+      const a = existing[i];
+      if (a.kind === 'rect') {
+        if (x >= a.x && x <= a.x + a.w && y >= a.y && y <= a.y + a.h) return a.id;
+      } else if (a.kind === 'text') {
+        const w = 10 + (a.text ? a.text.length * 8 : 20);
+        const h = 20;
+        if (x >= a.x - 5 && x <= a.x + w && y >= a.y - 15 && y <= a.y + 5) return a.id;
+      } else if (a.kind === 'line') {
+        const dist = Math.abs((a.h)*(x - a.x) - (a.w)*(y - a.y)) / Math.sqrt(a.h*a.h + a.w*a.w);
+        if (dist < 5) return a.id;
+      }
+    }
+    return null;
+  }
+
+  // Emoji selection
+  const panel = document.getElementById('emoji-panel');
+  if (panel) {
+    function setSelectedEmoji(emoji) {
+      document.querySelectorAll('.emoji-btn').forEach(btn => {
+        btn.classList.toggle('is-selected', btn.dataset.emoji === emoji);
+      });
+    }
+    if (currentEmoji) setSelectedEmoji(currentEmoji);
+    
+    panel.addEventListener('click', (e) => {
+      const btn = e.target.closest('.emoji-btn');
+      if (!btn) return;
+      const emoji = btn.dataset.emoji;
+      const newEmoji = emoji === currentEmoji ? null : emoji;
+      fetch(`/page/${pageId}/reaction`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({emoji: newEmoji})
+      }).then(r => {
+        if (!r.ok) {
+          throw new Error(`HTTP ${r.status}`);
+        }
+        return r.json().catch(() => {
+          // If JSON parsing fails, but status was OK, assume success
+          return {ok: true};
+        });
+      }).then(resp => {
+        // Update UI regardless of response format if HTTP status was OK
+        currentEmoji = newEmoji;
+        setSelectedEmoji(newEmoji);
+      }).catch(err => {
+        console.error('Error saving reaction:', err);
+        alert('Failed to save reaction. Please try again.');
+      });
+    });
+  }
+</script>
+{% endif %}
+{% endblock %}

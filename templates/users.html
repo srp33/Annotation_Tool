@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="level mb-4">
+  <div class="level-left">
+    <div class="level-item">
+      <h2 class="title is-4">User Management</h2>
+    </div>
+  </div>
+  <div class="level-right">
+    <div class="level-item">
+      <a href="{{ url_for('create_user') }}" class="button is-primary">Create New User</a>
+      <a href="{{ url_for('index') }}" class="button is-light ml-2">Document List</a>
+    </div>
+  </div>
+</div>
+
+<div class="notification is-info is-light mb-4">
+  <p><strong>Note:</strong> Students can create their own accounts by visiting the <a href="{{ url_for('register') }}">registration page</a>.</p>
+  <p>You can reset student passwords using the "Reset Password" button below.</p>
+</div>
+
+<div class="box">
+  <table class="table is-fullwidth">
+    <thead>
+      <tr>
+        <th>Username</th>
+        <th>Role</th>
+        <th>Created</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td>{{ u.username }}</td>
+        <td>
+          <span class="tag {% if u.role == 'teacher' %}is-primary{% else %}is-info{% endif %}">
+            {{ u.role }}
+          </span>
+        </td>
+        <td>{{ u.created_at[:10] }}</td>
+        <td>
+          {% if u.role == 'student' %}
+          <a href="{{ url_for('reset_user_password', user_id=u.id) }}" class="button is-small is-warning">
+            Reset Password
+          </a>
+          {% else %}
+          <span class="has-text-grey">-</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}
+

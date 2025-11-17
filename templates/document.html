@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="level mb-4">
+  <div class="level-left">
+    <div class="level-item">
+      <p class="subtitle">Document: <strong>{{ doc.filename }}</strong></p>
+    </div>
+  </div>
+  <div class="level-right">
+    <div class="level-item">
+      <a href="{{ url_for('index') }}" class="button is-light">Document List</a>
+    </div>
+  </div>
+</div>
+
+<div class="box">
+  <p class="mb-2">Pages:</p>
+  <div class="buttons">
+    {% for p in pages %}
+      <a class="button is-light" href="{{ url_for('page', page_id=p.id) }}">Page {{ p.page_index + 1 }}</a>
+    {% endfor %}
+  </div>
+</div>
+
+{% endblock %}

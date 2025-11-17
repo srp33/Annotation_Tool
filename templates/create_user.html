@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="level mb-4">
+  <div class="level-left">
+    <div class="level-item">
+      <h2 class="title is-4">Create New User</h2>
+    </div>
+  </div>
+  <div class="level-right">
+    <div class="level-item">
+      <a href="{{ url_for('list_users') }}" class="button is-light">Back to Users</a>
+    </div>
+  </div>
+</div>
+
+<div class="box" style="max-width: 500px;">
+  {% if error %}
+  <div class="notification is-danger">
+    {{ error }}
+  </div>
+  {% endif %}
+  
+  <form method="POST" action="{{ url_for('create_user') }}">
+    <div class="field">
+      <label class="label">Username</label>
+      <div class="control">
+        <input class="input" type="text" name="username" required autofocus>
+      </div>
+    </div>
+    
+    <div class="field">
+      <label class="label">Password</label>
+      <div class="control">
+        <input class="input" type="password" name="password" required>
+      </div>
+    </div>
+    
+    <div class="field">
+      <label class="label">Role</label>
+      <div class="control">
+        <div class="select is-fullwidth">
+          <select name="role" required>
+            <option value="student" selected>Student</option>
+            <option value="teacher">Teacher</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    
+    <div class="field">
+      <div class="control">
+        <button class="button is-primary" type="submit">Create User</button>
+        <a href="{{ url_for('list_users') }}" class="button is-light ml-2">Cancel</a>
+      </div>
+    </div>
+  </form>
+</div>
+
+{% endblock %}
+

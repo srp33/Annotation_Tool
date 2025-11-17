@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ title or "Home" }}</title>
+  <!-- Bulma CDN -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.2/css/bulma.min.css">
+  <!-- Font Awesome for icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <style>
+    /* Custom color scheme - override Bulma defaults with modern, high-contrast colors */
+    :root {
+      --primary: #007bff;
+      --primary-hover: #0056b3;
+      --link: #0056b3;
+      --info: #17a2b8;
+      --success: #28a745;
+      --warning: #ff9800;
+      --danger: #dc3545;
+      --light: #f8f9fa;
+      --dark: #343a40;
+    }
+    
+    /* Primary color overrides */
+    .button.is-primary, .is-primary {
+      background-color: #007bff;
+      border-color: #007bff;
+      color: #fff;
+    }
+    .button.is-primary:hover, .is-primary:hover {
+      background-color: #0056b3;
+      border-color: #0056b3;
+    }
+    .button.is-primary.is-outlined {
+      background-color: transparent;
+      border-color: #007bff;
+      color: #007bff;
+    }
+    .button.is-primary.is-outlined:hover {
+      background-color: #007bff;
+      border-color: #007bff;
+      color: #fff;
+    }
+    
+    /* Link color overrides */
+    .button.is-link, .is-link {
+      background-color: #0056b3;
+      border-color: #0056b3;
+      color: #fff;
+    }
+    .button.is-link:hover, .is-link:hover {
+      background-color: #004085;
+      border-color: #004085;
+    }
+    .button.is-link.is-outlined {
+      background-color: transparent;
+      border-color: #0056b3;
+      color: #0056b3;
+    }
+    .button.is-link.is-outlined:hover {
+      background-color: #0056b3;
+      border-color: #0056b3;
+      color: #fff;
+    }
+    
+    /* Info color overrides */
+    .button.is-info, .is-info {
+      background-color: #17a2b8;
+      border-color: #17a2b8;
+      color: #fff;
+    }
+    .button.is-info:hover, .is-info:hover {
+      background-color: #138496;
+      border-color: #138496;
+    }
+    .button.is-info.is-outlined {
+      background-color: transparent;
+      border-color: #17a2b8;
+      color: #17a2b8;
+    }
+    .button.is-info.is-outlined:hover {
+      background-color: #17a2b8;
+      border-color: #17a2b8;
+      color: #fff;
+    }
+    
+    /* Success color overrides */
+    .button.is-success, .is-success {
+      background-color: #28a745;
+      border-color: #28a745;
+      color: #fff;
+    }
+    .button.is-success:hover, .is-success:hover {
+      background-color: #218838;
+      border-color: #218838;
+    }
+    .button.is-success.is-outlined {
+      background-color: transparent;
+      border-color: #28a745;
+      color: #28a745;
+    }
+    .button.is-success.is-outlined:hover {
+      background-color: #28a745;
+      border-color: #28a745;
+      color: #fff;
+    }
+    
+    /* Warning color overrides */
+    .button.is-warning, .is-warning {
+      background-color: #ff9800;
+      border-color: #ff9800;
+      color: #fff;
+    }
+    .button.is-warning:hover, .is-warning:hover {
+      background-color: #e68900;
+      border-color: #e68900;
+    }
+    .button.is-warning.is-outlined {
+      background-color: transparent;
+      border-color: #ff9800;
+      color: #ff9800;
+    }
+    .button.is-warning.is-outlined:hover {
+      background-color: #ff9800;
+      border-color: #ff9800;
+      color: #fff;
+    }
+    
+    /* Danger color overrides */
+    .button.is-danger, .is-danger {
+      background-color: #dc3545;
+      border-color: #dc3545;
+      color: #fff;
+    }
+    .button.is-danger:hover, .is-danger:hover {
+      background-color: #c82333;
+      border-color: #c82333;
+    }
+    .button.is-danger.is-outlined {
+      background-color: transparent;
+      border-color: #dc3545;
+      color: #dc3545;
+    }
+    .button.is-danger.is-outlined:hover {
+      background-color: #dc3545;
+      border-color: #dc3545;
+      color: #fff;
+    }
+    
+    /* Tag color overrides */
+    .tag.is-primary {
+      background-color: #007bff;
+      color: #fff;
+    }
+    
+    /* Other styles */
+    .container.is-narrow { max-width: 980px; }
+    canvas { border: 1px solid #e5e5e5; cursor: crosshair; }
+    canvas.tool-delete { cursor: pointer; }
+    .page-image { max-width: 100%; height: auto; display: block; }
+    .toolbar .button { margin-right: .5rem; }
+    .toolbar .button.is-active { 
+      /* Solid background when active - Bulma will handle the color based on button type */
+      /* Remove outline to make it solid */
+    }
+    .emoji-btn.is-selected { box-shadow: 0 0 0 2px #007bff inset; } /* Updated to match new primary */
+  </style>
+</head>
+<body>
+  <section class="section" style="padding-top: 1rem; padding-bottom: 1rem;">
+    <div class="container is-narrow">
+      <div class="level" style="margin-bottom: 0.5rem;">
+        <div class="level-left">
+          <div class="level-item">
+            <h1 class="title is-6" style="margin-bottom: 0;">
+              <a href="{{ url_for('index') }}" style="color: inherit; text-decoration: none;">Home</a>
+            </h1>
+          </div>
+        </div>
+        {% if session.get('user_id') %}
+        <div class="level-right">
+          <div class="level-item">
+            <span class="mr-3">Logged in as <strong>{{ session.get('username') }}</strong> ({{ session.get('role') }})</span>
+            <a href="{{ url_for('logout') }}" class="button is-light is-small">Logout</a>
+          </div>
+        </div>
+        {% else %}
+        <div class="level-right">
+          <div class="level-item">
+            <a href="{{ url_for('register') }}" class="button is-light is-small">Register</a>
+            <a href="{{ url_for('setup') }}" class="button is-light is-small">Setup</a>
+            <a href="{{ url_for('login') }}" class="button is-primary is-small ml-2">Login</a>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+      {% block content %}{% endblock %}
+    </div>
+  </section>
+</body>
+</html>

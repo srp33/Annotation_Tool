@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="box" style="max-width: 500px; margin: 2rem auto;">
+  <h2 class="title is-4">Student Registration</h2>
+  <p class="subtitle is-6 has-text-grey mb-4">Create your student account</p>
+  
+  {% if error %}
+  <div class="notification is-danger">
+    {{ error }}
+  </div>
+  {% endif %}
+  
+  <form method="POST" action="{{ url_for('register') }}">
+    <div class="field">
+      <label class="label">Username</label>
+      <div class="control">
+        <input class="input" type="text" name="username" required autofocus placeholder="Choose a username">
+      </div>
+      <p class="help">This will be your login username</p>
+    </div>
+    
+    <div class="field">
+      <label class="label">Password</label>
+      <div class="control">
+        <input class="input" type="password" name="password" required placeholder="Enter password (min 4 characters)">
+      </div>
+      <p class="help">Must be at least 4 characters long</p>
+    </div>
+    
+    <div class="field">
+      <label class="label">Confirm Password</label>
+      <div class="control">
+        <input class="input" type="password" name="confirm_password" required placeholder="Confirm password">
+      </div>
+    </div>
+    
+    <div class="field">
+      <div class="control">
+        <button class="button is-primary is-fullwidth" type="submit">Create Student Account</button>
+      </div>
+    </div>
+  </form>
+  
+  <div class="mt-4 has-text-centered">
+    <p class="has-text-grey">Already have an account? <a href="{{ url_for('login') }}">Login here</a></p>
+  </div>
+  
+  <div class="notification is-info is-light mt-4">
+    <p><strong>Note:</strong> If you forget your password, contact your teacher to reset it.</p>
+  </div>
+</div>
+
+{% endblock %}
+

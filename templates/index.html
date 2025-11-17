@@ -1,0 +1,728 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% if user.role == 'teacher' %}
+<div class="box mb-4">
+  <div class="level">
+    <div class="level-left">
+      <div class="level-item">
+        <h2 class="title is-5">My Documents</h2>
+      </div>
+    </div>
+    <div class="level-right">
+      <div class="level-item">
+        <a href="{{ url_for('list_users') }}" class="button is-light mr-2">Manage Users</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="box mb-4">
+  <h2 class="title is-5">Select a Document to Annotate</h2>
+  <p class="subtitle is-6 has-text-grey">Choose a document from the dropdown below to start annotating</p>
+</div>
+{% endif %}
+
+{% if user.role == 'teacher' %}
+<div id="upload-section" class="box">
+  <form id="upload-form" action="{{ url_for('upload') }}" method="post" enctype="multipart/form-data">
+    <div class="field">
+      <label class="label">Upload a PDF</label>
+      <div class="file has-name is-fullwidth">
+        <label class="file-label">
+          <input class="file-input" type="file" name="pdf" accept="application/pdf" required>
+          <span class="file-cta">
+            <span class="file-icon">📄</span>
+            <span class="file-label">Choose a PDF…</span>
+          </span>
+          <span class="file-name">Your file...</span>
+        </label>
+      </div>
+    </div>
+    <div class="field">
+      <button class="button is-primary">Upload & View</button>
+    </div>
+  </form>
+</div>
+{% endif %}
+
+<div class="box">
+  {% if docs %}
+    {% if user.role == 'teacher' %}
+      <p class="mb-3">Available documents:</p>
+      <div>
+        {% for doc in docs %}
+          <div class="level mb-2">
+            <div class="level-left">
+              <div class="level-item">
+                <a href="{{ url_for('document_first_page', doc_id=doc.id) }}" class="button is-light">
+                  {{ doc.filename }}
+                </a>
+              </div>
+            </div>
+            <div class="level-right">
+              <div class="level-item">
+                <form method="POST" action="{{ url_for('delete_document', doc_id=doc.id) }}" style="display: inline;" 
+                      onsubmit="return confirm('Are you sure you want to delete \'{{ doc.filename }}\'? This will delete the document and all annotations. This cannot be undone.');">
+                  <button type="submit" class="button is-danger is-light" title="Delete document">
+                    <span class="icon">
+                      <i class="fas fa-trash"></i>
+                    </span>
+                    <span>Delete</span>
+                  </button>
+                </form>
+              </div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="field">
+        <label class="label">Select Document</label>
+        <div class="control">
+          <div class="select is-fullwidth">
+            <select id="document-select" onchange="goToDocument()">
+              <option value="">-- Choose a document --</option>
+              {% for doc in docs %}
+                <option value="{{ doc.id }}">{{ doc.filename }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+      </div>
+      <div id="selected-document" style="display: none;" class="mt-4">
+        <p class="mb-3">Selected document: <strong id="selected-doc-name"></strong></p>
+        <a id="view-doc-link" href="#" class="button is-primary">View & Annotate Document</a>
+      </div>
+    {% endif %}
+  {% else %}
+    <p class="has-text-grey">
+      {% if user.role == 'teacher' %}
+        No documents uploaded yet. Upload a PDF above to get started.
+      {% else %}
+        No documents available yet. Please ask your teacher to upload documents.
+      {% endif %}
+    </p>
+  {% endif %}
+</div>
+
+<script>
+function goToDocument() {
+  const select = document.getElementById('document-select');
+  const docId = select.value;
+  const selectedOption = select.options[select.selectedIndex];
+  
+  if (docId) {
+    document.getElementById('selected-doc-name').textContent = selectedOption.text;
+    document.getElementById('view-doc-link').href = '/doc/' + docId + '/first';
+    document.getElementById('selected-document').style.display = 'block';
+  } else {
+    document.getElementById('selected-document').style.display = 'none';
+  }
+}
+</script>
+
+<div id="viewer-section" class="box" style="display: none;">
+  <!-- Navigation Controls -->
+  <nav class="level">
+    <div class="level-left">
+      <div class="level-item">
+        <button id="first-page" class="button">
+          <span class="icon">
+            <i class="fas fa-fast-backward"></i>
+          </span>
+          <span>First</span>
+        </button>
+      </div>
+      <div class="level-item">
+        <button id="prev-page" class="button">
+          <span class="icon">
+            <i class="fas fa-step-backward"></i>
+          </span>
+          <span>Previous</span>
+        </button>
+      </div>
+      <div class="level-item">
+        <span id="page-info" class="has-text-weight-bold">Page 1 of 1</span>
+      </div>
+      <div class="level-item">
+        <button id="next-page" class="button">
+          <span>Next</span>
+          <span class="icon">
+            <i class="fas fa-step-forward"></i>
+          </span>
+        </button>
+      </div>
+      <div class="level-item">
+        <button id="last-page" class="button">
+          <span>Last</span>
+          <span class="icon">
+            <i class="fas fa-fast-forward"></i>
+          </span>
+        </button>
+      </div>
+    </div>
+    <div class="level-right">
+      <div class="level-item">
+        <button id="new-document" class="button is-light">
+          <span class="icon">
+            <i class="fas fa-plus"></i>
+          </span>
+          <span>New Document</span>
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <div class="columns mt-4">
+    <!-- LEFT: Canvas and tools -->
+    <div class="column is-two-thirds">
+      <div class="toolbar mb-4">
+        <div class="buttons">
+          <button class="button is-link is-outlined" id="tool-rect">Rectangle</button>
+          <button class="button is-warning is-outlined" id="tool-line">Line</button>
+          <input class="input" id="text-input" type="text" placeholder="Type text, then click on canvas" style="max-width:280px">
+          <button class="button is-info is-outlined" id="tool-text">Text</button>
+          <input class="input" id="color-input" type="color" value="#000000" style="max-width:120px">
+          <button class="button is-danger is-outlined" id="tool-delete">Delete</button>
+        </div>
+      </div>
+
+      <div style="position:relative; display:inline-block;">
+        <img id="page-img"
+             src=""
+             class="page-image">
+        <canvas id="annot-canvas" style="position:absolute; left:0; top:0;"></canvas>
+      </div>
+    </div>
+
+    <!-- RIGHT: Emoji panel -->
+    <div class="column is-one-third">
+      <h2 class="title is-5">How are you feeling on this page?</h2>
+      <p class="mb-3 has-text-grey">Select one emotion. Only one can be active.</p>
+
+      <div id="emoji-panel" class="is-flex is-flex-wrap-wrap" style="gap:.75rem;">
+        <button class="button is-light emoji-btn" data-emoji="🤩" title="Excited">
+          <div style="display:flex;flex-direction:column;align-items:center;line-height:1;">
+            <span style="font-size:1.6rem;">🤩</span>
+            <span style="font-size:.8rem;">Excited</span>
+          </div>
+        </button>
+        <button class="button is-light emoji-btn" data-emoji="🙂" title="Okay/Happy">
+          <div style="display:flex;flex-direction:column;align-items:center;line-height:1;">
+            <span style="font-size:1.6rem;">🙂</span>
+            <span style="font-size:.8rem;">Okay</span>
+          </div>
+        </button>
+        <button class="button is-light emoji-btn" data-emoji="😕" title="Confused">
+          <div style="display:flex;flex-direction:column;align-items:center;line-height:1;">
+            <span style="font-size:1.6rem;">😕</span>
+            <span style="font-size:.8rem;">Confused</span>
+          </div>
+        </button>
+        <button class="button is-light emoji-btn" data-emoji="😤" title="Frustrated">
+          <div style="display:flex;flex-direction:column;align-items:center;line-height:1;">
+            <span style="font-size:1.6rem;">😤</span>
+            <span style="font-size:.8rem;">Frustrated</span>
+          </div>
+        </button>
+        <button class="button is-light emoji-btn" data-emoji="😢" title="Overwhelmed">
+          <div style="display:flex;flex-direction:column;align-items:center;line-height:1;">
+            <span style="font-size:1.6rem;">😢</span>
+            <span style="font-size:.8rem;">Overwhelmed</span>
+          </div>
+        </button>
+        <button class="button is-light emoji-btn" data-emoji="😴" title="Bored/Tired">
+          <div style="display:flex;flex-direction:column;align-items:center;line-height:1;">
+            <span style="font-size:1.6rem;">😴</span>
+            <span style="font-size:.8rem;">Bored</span>
+          </div>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .emoji-btn.is-selected { box-shadow: 0 0 0 2px #485fc7 inset; }
+  .page-image { max-width: 100%; height: auto; display: block; }
+  #annot-canvas { pointer-events: auto; }
+</style>
+
+<script>
+  // Show filename in file input
+  document.querySelector('.file-input').addEventListener('change', function(e) {
+    const nameSpan = document.querySelector('.file-name');
+    nameSpan.textContent = e.target.files[0]?.name || 'Your file...';
+  });
+
+  // State
+  let currentDoc = null;
+  let currentPage = 0;
+  let totalPages = 0;
+  let pages = [];
+  let annotations = [];
+  let currentEmoji = null;
+
+  // DOM Elements
+  const uploadSection = document.getElementById('upload-section');
+  const viewerSection = document.getElementById('viewer-section');
+  const pageImg = document.getElementById('page-img');
+  const canvas = document.getElementById('annot-canvas');
+  const ctx = canvas.getContext('2d');
+  const pageInfo = document.getElementById('page-info');
+  const firstPageBtn = document.getElementById('first-page');
+  const prevPageBtn = document.getElementById('prev-page');
+  const nextPageBtn = document.getElementById('next-page');
+  const lastPageBtn = document.getElementById('last-page');
+  const newDocumentBtn = document.getElementById('new-document');
+  const emojiPanel = document.getElementById('emoji-panel');
+  
+  // Tool elements
+  const toolRectBtn = document.getElementById('tool-rect');
+  const toolTextBtn = document.getElementById('tool-text');
+  const toolLineBtn = document.getElementById('tool-line');
+  const deleteBtn = document.getElementById('tool-delete');
+  const textInput = document.getElementById('text-input');
+  const colorInput = document.getElementById('color-input');
+
+  let tool = 'rect';
+  let drawing = false;
+  let startX, startY;
+  let currentAnnotation = null;
+
+  // Event Listeners
+  document.getElementById('upload-form').addEventListener('submit', handleUpload);
+  firstPageBtn.addEventListener('click', () => {
+    if (totalPages > 0) goToPage(0);
+  });
+  prevPageBtn.addEventListener('click', () => {
+    if (currentPage > 0 && totalPages > 0) {
+      goToPage(currentPage - 1);
+    }
+  });
+  nextPageBtn.addEventListener('click', () => {
+    if (currentPage < totalPages - 1 && totalPages > 0) {
+      goToPage(currentPage + 1);
+    }
+  });
+  lastPageBtn.addEventListener('click', () => {
+    if (totalPages > 0) goToPage(totalPages - 1);
+  });
+  newDocumentBtn.addEventListener('click', resetViewer);
+
+  // Tool event listeners
+  toolRectBtn.addEventListener('click', () => setTool('rect'));
+  toolTextBtn.addEventListener('click', () => setTool('text'));
+  toolLineBtn.addEventListener('click', () => setTool('line'));
+  deleteBtn.addEventListener('click', () => setTool('delete'));
+  
+  // Canvas event listeners
+  canvas.addEventListener('mousedown', handleMouseDown);
+  canvas.addEventListener('mousemove', handleMouseMove);
+  canvas.addEventListener('mouseup', handleMouseUp);
+  canvas.addEventListener('mouseleave', handleMouseUp);
+  
+  // Emoji selection
+  emojiPanel.addEventListener('click', handleEmojiClick);
+
+  // Functions
+  async function handleUpload(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(e.target);
+    try {
+      const response = await fetch(e.target.action, {
+        method: 'POST',
+        body: formData,
+        headers: {
+          'Accept': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Upload failed');
+      }
+      
+      const data = await response.json();
+      currentDoc = data.doc_id;
+      pages = data.pages;
+      totalPages = pages.length;
+      
+      showViewer();
+      loadPage(0);
+      
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      alert('Failed to upload file. Please try again.');
+    }
+  }
+  
+  function showViewer() {
+    uploadSection.style.display = 'none';
+    viewerSection.style.display = 'block';
+  }
+  
+  function resetViewer() {
+    uploadSection.style.display = 'block';
+    viewerSection.style.display = 'none';
+    document.getElementById('upload-form').reset();
+    document.querySelector('.file-name').textContent = 'Your file...';
+    currentDoc = null;
+    currentPage = 0;
+    totalPages = 0;
+    pages = [];
+    annotations = [];
+    currentEmoji = null;
+  }
+  
+  async function loadPage(pageIndex) {
+    if (pageIndex < 0 || pageIndex >= totalPages) return;
+    
+    currentPage = pageIndex;
+    const pageId = pages[pageIndex].id;
+    
+    try {
+      // Load page image and annotations
+      const [pageRes, emojiRes] = await Promise.all([
+        fetch(`/page/${pageId}.json`),
+        fetch(`/page/${pageId}/reaction`)
+      ]);
+      
+      if (!pageRes.ok) throw new Error('Failed to load page');
+      
+      const pageData = await pageRes.json();
+      
+      // Set emoji if exists
+      if (emojiRes.ok) {
+        const emojiData = await emojiRes.json();
+        currentEmoji = emojiData.emoji || null;
+        updateEmojiUI();
+      } else {
+        currentEmoji = null;
+        updateEmojiUI();
+      }
+      
+      // Update UI
+      pageInfo.textContent = `Page ${currentPage + 1} of ${totalPages}`;
+      updateNavButtons();
+      
+      // Load annotations before setting image src so canvas can resize properly
+      annotations = pageData.annotations || [];
+      
+      // Set image src and wait for it to load before redrawing
+      pageImg.src = pageData.image_url;
+      
+    } catch (error) {
+      console.error('Error loading page:', error);
+      alert('Failed to load page. Please try again.');
+    }
+  }
+  
+  function goToPage(pageIndex) {
+    if (pageIndex >= 0 && pageIndex < totalPages && totalPages > 0) {
+      loadPage(pageIndex);
+    }
+  }
+  
+  function updateNavButtons() {
+    firstPageBtn.disabled = currentPage === 0;
+    prevPageBtn.disabled = currentPage === 0;
+    nextPageBtn.disabled = currentPage === totalPages - 1;
+    lastPageBtn.disabled = currentPage === totalPages - 1;
+  }
+  
+  function setTool(newTool) {
+    tool = newTool;
+    // Remove active class and add outlined class to all buttons
+    [toolRectBtn, toolTextBtn, toolLineBtn, deleteBtn].forEach(btn => {
+      btn.classList.remove('is-active');
+      btn.classList.add('is-outlined');
+    });
+    
+    // Add active class and remove outlined class from selected button
+    if (tool === 'rect') {
+      toolRectBtn.classList.add('is-active');
+      toolRectBtn.classList.remove('is-outlined');
+      canvas.style.cursor = 'crosshair';
+    } else if (tool === 'text') {
+      toolTextBtn.classList.add('is-active');
+      toolTextBtn.classList.remove('is-outlined');
+      canvas.style.cursor = 'crosshair';
+    } else if (tool === 'line') {
+      toolLineBtn.classList.add('is-active');
+      toolLineBtn.classList.remove('is-outlined');
+      canvas.style.cursor = 'crosshair';
+    } else if (tool === 'delete') {
+      deleteBtn.classList.add('is-active');
+      deleteBtn.classList.remove('is-outlined');
+      canvas.style.cursor = 'pointer';
+    }
+    
+    // Show/hide text input based on tool
+    textInput.style.display = tool === 'text' ? 'inline-block' : 'none';
+  }
+  
+  // Set initial active tool
+  setTool('rect');
+  
+  function handleMouseDown(e) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const x = (e.clientX - rect.left) * scaleX;
+    const y = (e.clientY - rect.top) * scaleY;
+    
+    if (tool === 'delete') {
+      // Find and delete annotation at click position
+      const hit = hitTest(x, y);
+      if (hit) {
+        deleteAnnotation(hit.id);
+      }
+      return;
+    }
+    
+    if (tool === 'text') {
+      if (textInput.value.trim()) {
+        createTextAnnotation(x, y, textInput.value);
+        textInput.value = '';
+      }
+      return;
+    }
+    
+    // For rectangle and line tools
+    if (tool === 'rect' || tool === 'line') {
+      startX = x;
+      startY = y;
+      
+      currentAnnotation = {
+        kind: tool,
+        x: startX,
+        y: startY,
+        w: 0,
+        h: 0,
+        color: colorInput.value
+      };
+      
+      if (tool === 'rect') {
+        currentAnnotation.text = '';
+      }
+      
+      drawing = true;
+    }
+  }
+  
+  function handleMouseMove(e) {
+    if (!drawing || !currentAnnotation) return;
+    
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const x = (e.clientX - rect.left) * scaleX;
+    const y = (e.clientY - rect.top) * scaleY;
+    
+    // Update dimensions
+    currentAnnotation.w = x - startX;
+    currentAnnotation.h = y - startY;
+    
+    // Redraw with current annotation
+    redraw();
+    drawAnnotation(currentAnnotation);
+  }
+  
+  function handleMouseUp() {
+    if (!drawing || !currentAnnotation) return;
+    
+    // Only save if the annotation has some size
+    if (Math.abs(currentAnnotation.w) > 5 && Math.abs(currentAnnotation.h) > 5) {
+      saveAnnotation(currentAnnotation);
+    }
+    
+    drawing = false;
+    currentAnnotation = null;
+  }
+  
+  async function createTextAnnotation(x, y, text) {
+    const annotation = {
+      kind: 'text',
+      x: x,
+      y: y,
+      text: text,
+      color: colorInput.value
+    };
+    
+    await saveAnnotation(annotation);
+  }
+  
+  async function saveAnnotation(annotation) {
+    try {
+      const pageId = pages[currentPage].id;
+      const response = await fetch(`/page/${pageId}/annotate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify(annotation)
+      });
+      
+      if (!response.ok) throw new Error('Failed to save annotation');
+      
+      const savedAnnotation = await response.json();
+      annotations.push(savedAnnotation);
+      redraw();
+      
+    } catch (error) {
+      console.error('Error saving annotation:', error);
+      alert('Failed to save annotation. Please try again.');
+    }
+  }
+  
+  async function deleteAnnotation(annotationId) {
+    try {
+      const response = await fetch(`/annotations/${annotationId}`, {
+        method: 'DELETE'
+      });
+      
+      if (!response.ok) throw new Error('Failed to delete annotation');
+      
+      // Remove from local annotations
+      annotations = annotations.filter(a => a.id !== annotationId);
+      redraw();
+      
+    } catch (error) {
+      console.error('Error deleting annotation:', error);
+      alert('Failed to delete annotation. Please try again.');
+    }
+  }
+  
+  function hitTest(x, y) {
+    // Check annotations in reverse order (top to bottom in z-index)
+    for (let i = annotations.length - 1; i >= 0; i--) {
+      const a = annotations[i];
+      
+      if (a.kind === 'rect' || a.kind === 'text') {
+        const isInside = x >= a.x && x <= a.x + (a.w || 100) &&
+                        y >= a.y && y <= a.y + (a.h || 30);
+        if (isInside) return a;
+      } else if (a.kind === 'line') {
+        // Calculate distance from point to line segment
+        // Line goes from (a.x, a.y) to (a.x + a.w, a.y + a.h)
+        const dist = Math.abs((a.h)*(x - a.x) - (a.w)*(y - a.y)) / Math.sqrt(a.h*a.h + a.w*a.w);
+        if (dist < 5) return a;
+      }
+    }
+    return null;
+  }
+  
+  function drawAnnotation(a) {
+    if (!a) return;
+    
+    ctx.save();
+    const color = a.color || '#000000';
+    ctx.strokeStyle = color;
+    // Increased transparency: 15 hex = ~8% opacity (was 40 = 25% opacity)
+    ctx.fillStyle = a.kind === 'rect' ? `${color}15` : color;
+    ctx.lineWidth = 2;
+    
+    switch (a.kind) {
+      case 'rect':
+        ctx.beginPath();
+        ctx.rect(a.x, a.y, a.w, a.h);
+        ctx.fill();
+        ctx.stroke();
+        break;
+        
+      case 'text':
+        ctx.font = '16px Arial';
+        ctx.fillStyle = a.color || '#000000';
+        ctx.fillText(a.text, a.x, a.y + 16);
+        break;
+        
+      case 'line':
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(a.x + a.w, a.y + a.h);
+        ctx.stroke();
+        break;
+    }
+    
+    ctx.restore();
+  }
+  
+  function redraw() {
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Redraw all annotations
+    annotations.forEach(a => drawAnnotation(a));
+  }
+  
+  function updateEmojiUI() {
+    // Remove selected state from all emoji buttons
+    document.querySelectorAll('.emoji-btn').forEach(btn => {
+      btn.classList.remove('is-selected');
+      if (btn.dataset.emoji === currentEmoji) {
+        btn.classList.add('is-selected');
+      }
+    });
+  }
+  
+  async function handleEmojiClick(e) {
+    const btn = e.target.closest('.emoji-btn');
+    if (!btn) return;
+    
+    const emoji = btn.dataset.emoji;
+    if (emoji === currentEmoji) {
+      // Toggle off if clicking the same emoji
+      currentEmoji = null;
+    } else {
+      currentEmoji = emoji;
+    }
+    
+    updateEmojiUI();
+    
+    // Save reaction
+    try {
+      const pageId = pages[currentPage].id;
+      const response = await fetch(`/page/${pageId}/reaction`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({ emoji: currentEmoji })
+      });
+      
+      if (!response.ok) throw new Error('Failed to save reaction');
+      
+    } catch (error) {
+      console.error('Error saving reaction:', error);
+      alert('Failed to save reaction. Please try again.');
+    }
+  }
+  
+  // Handle window resize and image load
+  function resizeCanvasToImage() {
+    if (pageImg.complete && pageImg.naturalWidth > 0) {
+      // Match canvas size to displayed image size
+      const rect = pageImg.getBoundingClientRect();
+      canvas.width = rect.width;
+      canvas.height = rect.height;
+      canvas.style.width = rect.width + 'px';
+      canvas.style.height = rect.height + 'px';
+      redraw();
+    }
+  }
+  
+  window.addEventListener('resize', resizeCanvasToImage);
+  pageImg.addEventListener('load', () => {
+    // Wait a bit for layout to settle
+    setTimeout(resizeCanvasToImage, 100);
+  });
+  
+  // Initialize
+  setTool('rect');
+</script>
+
+{% endblock %}

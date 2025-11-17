@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="box" style="max-width: 400px; margin: 2rem auto;">
+  <h2 class="title is-4">Login</h2>
+  
+  {% if error %}
+  <div class="notification is-danger">
+    {{ error }}
+  </div>
+  {% endif %}
+  
+  <form method="POST" action="{{ url_for('login') }}">
+    <div class="field">
+      <label class="label">Username</label>
+      <div class="control">
+        <input class="input" type="text" name="username" required autofocus placeholder="Enter your username">
+      </div>
+    </div>
+    
+    <div class="field">
+      <label class="label">Password</label>
+      <div class="control">
+        <input class="input" type="password" name="password" required placeholder="Enter your password">
+      </div>
+    </div>
+    
+    <div class="field">
+      <div class="control">
+        <button class="button is-primary is-fullwidth" type="submit">Login</button>
+      </div>
+    </div>
+  </form>
+  
+  <div class="notification is-info is-light mt-4">
+    <p class="mb-2"><strong>First time using this application?</strong></p>
+    <p class="mb-2">If no accounts have been created yet, visit the <a href="{{ url_for('setup') }}">setup page</a> to create the first teacher account.</p>
+    <p class="mb-2"><strong>Students:</strong> You can <a href="{{ url_for('register') }}">create your own account</a> by registering.</p>
+    <p class="mb-0"><strong>For teachers:</strong> After logging in, go to "Manage Users" to manage student accounts and reset passwords.</p>
+  </div>
+</div>
+
+{% endblock %}
+

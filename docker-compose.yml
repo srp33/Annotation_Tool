@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    ports:
+      - "3389:3389"
+    volumes:
+      # Persist database
+      - ./app.db:/app/app.db
+      # Persist uploaded PDFs
+      - ./uploads:/app/uploads
+      # Persist generated images
+      - ./images:/app/images
+    environment:
+      - FLASK_APP=app.py
+      - FLASK_ENV=production
+    restart: unless-stopped
+
