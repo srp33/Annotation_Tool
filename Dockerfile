@@ -23,10 +23,6 @@ COPY . .
 COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Create necessary directories with proper permissions
-# The app will create uploads/images on startup, but we ensure they exist
-RUN mkdir -p uploads images
-
 # Ensure the app directory is writable (for database creation)
 # Note: When volumes are mounted, they override these permissions
 # but this ensures the base structure is correct

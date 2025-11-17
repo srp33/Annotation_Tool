@@ -3,21 +3,24 @@
 docker stop pdf-annotator
 docker system prune -f
 
-# Ensure database file exists (Docker creates a directory if file doesn't exist)
-if [ -d "$(pwd)/app.db" ]; then
-    echo "ERROR: app.db is a directory! Removing and creating as file..."
+# Handle app.db file
+# - If it exists as a file: preserve it (don't touch existing database)
+# - If it exists as a directory: fix it (from previous failed mount)
+# - If it doesn't exist: create empty file (Docker would create directory otherwise)
+if [ -f "$(pwd)/app.db" ]; then
+    echo "Using existing database file: app.db"
+elif [ -d "$(pwd)/app.db" ]; then
+    echo "WARNING: app.db is a directory (from previous failed mount)."
+    echo "Removing directory and creating empty database file..."
     rm -rf "$(pwd)/app.db"
     touch "$(pwd)/app.db"
     chmod 666 "$(pwd)/app.db"
-elif [ ! -f "$(pwd)/app.db" ]; then
-    echo "Creating database file..."
+else
+    echo "Database file doesn't exist. Creating empty database file..."
+    echo "Note: This will be an empty database. Your existing data is safe if app.db already exists."
     touch "$(pwd)/app.db"
     chmod 666 "$(pwd)/app.db"
 fi
-
-# Ensure directories exist
-mkdir -p "$(pwd)/uploads" "$(pwd)/images"
-chmod 755 "$(pwd)/uploads" "$(pwd)/images"
 
 echo "Starting PDF Annotator container..."
 docker run -d \

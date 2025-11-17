@@ -12,3 +12,6 @@ else
     echo "✗ Docker build failed"
     exit 1
 fi
+
+mkdir -p uploads images
+chmod 755 uploads images
