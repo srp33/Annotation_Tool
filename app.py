@@ -76,17 +76,23 @@ def url_with_prefix(endpoint, **values):
     Flask's url_for should automatically use SCRIPT_NAME from WSGI environ,
     but we ensure it's there as a fallback."""
     try:
+        # Get the base URL from Flask's url_for
         url = url_for(endpoint, **values)
+        
+        # Get SCRIPT_NAME from config (set by middleware)
         script_name = app.config.get('SCRIPT_NAME', '')
+        
+        # If SCRIPT_NAME is set and URL doesn't already start with it, prepend it
         if script_name:
-            # Flask should already include SCRIPT_NAME, but check to be sure
-            # Remove any existing prefix first to avoid double-prefixing
-            if url.startswith(script_name):
-                return url  # Already has prefix
-            # Ensure URL starts with /, then prepend prefix
+            # Remove trailing slash from script_name if present
+            script_name = script_name.rstrip('/')
+            # Ensure URL starts with /
             if not url.startswith('/'):
                 url = '/' + url
-            url = script_name + url
+            # Only add prefix if not already present
+            if not url.startswith(script_name):
+                url = script_name + url
+        
         return url
     except Exception as e:
         # Fallback to url_for if there's an error
@@ -769,12 +775,16 @@ def page(page_id):
         current_index = next((i for i, p in enumerate(all_pages) if p.id == page_id), 0)
         prev_page_id = all_pages[current_index - 1].id if current_index > 0 else None
         next_page_id = all_pages[current_index + 1].id if current_index < len(all_pages) - 1 else None
+        
+        # Generate image URL with prefix support
+        image_url = url_with_prefix('serve_image', rel=page_data.image_path)
     
     return render_template("page.html", 
                          page={"id": page_data.id, 
                                "document_id": page_data.document_id,
                                "page_index": page_data.page_index,
-                               "image_path": page_data.image_path},
+                               "image_path": page_data.image_path,
+                               "image_url": image_url},
                          doc={"id": page_data.document_id, "filename": page_data.filename},
                          annotations=annotations_list,
                          current_emoji=current_emoji,

@@ -181,6 +181,7 @@ function goToDocument() {
         <div class="buttons">
           <button class="button is-link is-outlined" id="tool-rect">Rectangle</button>
           <button class="button is-warning is-outlined" id="tool-line">Line</button>
+          <button class="button is-success is-outlined" id="tool-freehand">Freehand</button>
           <input class="input" id="text-input" type="text" placeholder="Type text, then click on canvas" style="max-width:280px">
           <button class="button is-info is-outlined" id="tool-text">Text</button>
           <input class="input" id="color-input" type="color" value="#000000" style="max-width:120px">
@@ -238,6 +239,18 @@ function goToDocument() {
             <span style="font-size:.8rem;">Bored</span>
           </div>
         </button>
+        <button class="button is-light emoji-btn" data-emoji="😡" title="Triggered">
+          <div style="display:flex;flex-direction:column;align-items:center;line-height:1;">
+            <span style="font-size:1.6rem;">😡</span>
+            <span style="font-size:.8rem;">Triggered</span>
+          </div>
+        </button>
+        <button class="button is-light emoji-btn" data-emoji="😲" title="Surprised">
+          <div style="display:flex;flex-direction:column;align-items:center;line-height:1;">
+            <span style="font-size:1.6rem;">😲</span>
+            <span style="font-size:.8rem;">Surprised</span>
+          </div>
+        </button>
       </div>
     </div>
   </div>
@@ -282,6 +295,7 @@ function goToDocument() {
   const toolRectBtn = document.getElementById('tool-rect');
   const toolTextBtn = document.getElementById('tool-text');
   const toolLineBtn = document.getElementById('tool-line');
+  const toolFreehandBtn = document.getElementById('tool-freehand');
   const deleteBtn = document.getElementById('tool-delete');
   const textInput = document.getElementById('text-input');
   const colorInput = document.getElementById('color-input');
@@ -290,6 +304,7 @@ function goToDocument() {
   let drawing = false;
   let startX, startY;
   let currentAnnotation = null;
+  let freehandPath = [];
 
   // Event Listeners
   document.getElementById('upload-form').addEventListener('submit', handleUpload);
@@ -315,6 +330,7 @@ function goToDocument() {
   toolRectBtn.addEventListener('click', () => setTool('rect'));
   toolTextBtn.addEventListener('click', () => setTool('text'));
   toolLineBtn.addEventListener('click', () => setTool('line'));
+  toolFreehandBtn.addEventListener('click', () => setTool('freehand'));
   deleteBtn.addEventListener('click', () => setTool('delete'));
   
   // Canvas event listeners
@@ -322,6 +338,11 @@ function goToDocument() {
   canvas.addEventListener('mousemove', handleMouseMove);
   canvas.addEventListener('mouseup', handleMouseUp);
   canvas.addEventListener('mouseleave', handleMouseUp);
+  
+  // Touch events for stylus/mobile support
+  canvas.addEventListener('touchstart', handleTouchStart);
+  canvas.addEventListener('touchmove', handleTouchMove);
+  canvas.addEventListener('touchend', handleTouchEnd);
   
   // Emoji selection
   emojiPanel.addEventListener('click', handleEmojiClick);
@@ -435,7 +456,7 @@ function goToDocument() {
   function setTool(newTool) {
     tool = newTool;
     // Remove active class and add outlined class to all buttons
-    [toolRectBtn, toolTextBtn, toolLineBtn, deleteBtn].forEach(btn => {
+    [toolRectBtn, toolTextBtn, toolLineBtn, toolFreehandBtn, deleteBtn].forEach(btn => {
       btn.classList.remove('is-active');
       btn.classList.add('is-outlined');
     });
@@ -453,6 +474,10 @@ function goToDocument() {
       toolLineBtn.classList.add('is-active');
       toolLineBtn.classList.remove('is-outlined');
       canvas.style.cursor = 'crosshair';
+    } else if (tool === 'freehand') {
+      toolFreehandBtn.classList.add('is-active');
+      toolFreehandBtn.classList.remove('is-outlined');
+      canvas.style.cursor = 'crosshair';
     } else if (tool === 'delete') {
       deleteBtn.classList.add('is-active');
       deleteBtn.classList.remove('is-outlined');
@@ -464,14 +489,24 @@ function goToDocument() {
   }
   
   // Set initial active tool
-  setTool('rect');
+  setTool('freehand');
   
-  function handleMouseDown(e) {
+  function getCanvasCoordinates(e) {
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
-    const x = (e.clientX - rect.left) * scaleX;
-    const y = (e.clientY - rect.top) * scaleY;
+    const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+    const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+    return {
+      x: (clientX - rect.left) * scaleX,
+      y: (clientY - rect.top) * scaleY
+    };
+  }
+  
+  function handleMouseDown(e) {
+    const coords = getCanvasCoordinates(e);
+    const x = coords.x;
+    const y = coords.y;
     
     if (tool === 'delete') {
       // Find and delete annotation at click position
@@ -490,8 +525,17 @@ function goToDocument() {
       return;
     }
     
-    // For rectangle and line tools
-    if (tool === 'rect' || tool === 'line') {
+    if (tool === 'freehand') {
+      drawing = true;
+      freehandPath = [{x, y}];
+      // Start drawing immediately
+      ctx.strokeStyle = colorInput.value;
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+    } else if (tool === 'rect' || tool === 'line') {
       startX = x;
       startY = y;
       
@@ -512,34 +556,77 @@ function goToDocument() {
     }
   }
   
-  function handleMouseMove(e) {
-    if (!drawing || !currentAnnotation) return;
-    
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    const x = (e.clientX - rect.left) * scaleX;
-    const y = (e.clientY - rect.top) * scaleY;
-    
-    // Update dimensions
-    currentAnnotation.w = x - startX;
-    currentAnnotation.h = y - startY;
-    
-    // Redraw with current annotation
-    redraw();
-    drawAnnotation(currentAnnotation);
+  function handleTouchStart(e) {
+    e.preventDefault();
+    handleMouseDown(e);
   }
   
-  function handleMouseUp() {
-    if (!drawing || !currentAnnotation) return;
+  function handleMouseMove(e) {
+    if (!drawing) return;
     
-    // Only save if the annotation has some size
-    if (Math.abs(currentAnnotation.w) > 5 && Math.abs(currentAnnotation.h) > 5) {
-      saveAnnotation(currentAnnotation);
+    const coords = getCanvasCoordinates(e);
+    const x = coords.x;
+    const y = coords.y;
+    
+    if (tool === 'freehand') {
+      freehandPath.push({x, y});
+      ctx.lineTo(x, y);
+      ctx.stroke();
+    } else if (currentAnnotation) {
+      // Update dimensions
+      currentAnnotation.w = x - startX;
+      currentAnnotation.h = y - startY;
+      
+      // Redraw with current annotation
+      redraw();
+      drawAnnotation(currentAnnotation);
+    }
+  }
+  
+  function handleTouchMove(e) {
+    e.preventDefault();
+    handleMouseMove(e);
+  }
+  
+  function handleMouseUp(e) {
+    if (!drawing) return;
+    
+    if (tool === 'freehand') {
+      if (freehandPath.length > 1) {
+        // Calculate bounding box for freehand drawing
+        const xs = freehandPath.map(p => p.x);
+        const ys = freehandPath.map(p => p.y);
+        const minX = Math.min(...xs);
+        const maxX = Math.max(...xs);
+        const minY = Math.min(...ys);
+        const maxY = Math.max(...ys);
+        
+        const annotation = {
+          kind: 'freehand',
+          x: minX,
+          y: minY,
+          w: maxX - minX,
+          h: maxY - minY,
+          text: JSON.stringify(freehandPath),
+          color: colorInput.value
+        };
+        saveAnnotation(annotation);
+      }
+      freehandPath = [];
+    } else if (currentAnnotation) {
+      // Only save if the annotation has some size
+      if (Math.abs(currentAnnotation.w) > 5 && Math.abs(currentAnnotation.h) > 5) {
+        saveAnnotation(currentAnnotation);
+      }
+      currentAnnotation = null;
     }
     
     drawing = false;
-    currentAnnotation = null;
+  }
+  
+  function handleTouchEnd(e) {
+    e.preventDefault();
+    handleMouseUp(e);
   }
   
   async function createTextAnnotation(x, y, text) {
@@ -596,6 +683,33 @@ function goToDocument() {
     }
   }
   
+  function pointToLineDistance(px, py, x1, y1, x2, y2) {
+    const A = px - x1;
+    const B = py - y1;
+    const C = x2 - x1;
+    const D = y2 - y1;
+    const dot = A * C + B * D;
+    const lenSq = C * C + D * D;
+    let param = -1;
+    if (lenSq !== 0) param = dot / lenSq;
+    
+    let xx, yy;
+    if (param < 0) {
+      xx = x1;
+      yy = y1;
+    } else if (param > 1) {
+      xx = x2;
+      yy = y2;
+    } else {
+      xx = x1 + param * C;
+      yy = y1 + param * D;
+    }
+    
+    const dx = px - xx;
+    const dy = py - yy;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
   function hitTest(x, y) {
     // Check annotations in reverse order (top to bottom in z-index)
     for (let i = annotations.length - 1; i >= 0; i--) {
@@ -610,6 +724,27 @@ function goToDocument() {
         // Line goes from (a.x, a.y) to (a.x + a.w, a.y + a.h)
         const dist = Math.abs((a.h)*(x - a.x) - (a.w)*(y - a.y)) / Math.sqrt(a.h*a.h + a.w*a.w);
         if (dist < 5) return a;
+      } else if (a.kind === 'freehand') {
+        // Check if point is near any segment of the freehand path
+        if (a.text) {
+          try {
+            const path = JSON.parse(a.text);
+            if (Array.isArray(path) && path.length > 0) {
+              // Check if point is within bounding box first (quick check)
+              if (x >= a.x && x <= a.x + a.w && y >= a.y && y <= a.y + a.h) {
+                // Check distance to path segments
+                for (let j = 0; j < path.length - 1; j++) {
+                  const p1 = path[j];
+                  const p2 = path[j + 1];
+                  const dist = pointToLineDistance(x, y, p1.x, p1.y, p2.x, p2.y);
+                  if (dist < 8) return a; // 8px threshold for freehand
+                }
+              }
+            }
+          } catch (e) {
+            console.error('Error parsing freehand path in hitTest:', e);
+          }
+        }
       }
     }
     return null;
@@ -644,6 +779,25 @@ function goToDocument() {
         ctx.moveTo(a.x, a.y);
         ctx.lineTo(a.x + a.w, a.y + a.h);
         ctx.stroke();
+        break;
+        
+      case 'freehand':
+        // Draw freehand path from stored points
+        if (a.text) {
+          try {
+            const path = JSON.parse(a.text);
+            if (Array.isArray(path) && path.length > 0) {
+              ctx.beginPath();
+              ctx.moveTo(path[0].x, path[0].y);
+              for (let i = 1; i < path.length; i++) {
+                ctx.lineTo(path[i].x, path[i].y);
+              }
+              ctx.stroke();
+            }
+          } catch (e) {
+            console.error('Error parsing freehand path:', e);
+          }
+        }
         break;
     }
     
