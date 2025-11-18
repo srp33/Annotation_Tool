@@ -39,4 +39,4 @@ ENV PYTHONUNBUFFERED=1
 ENTRYPOINT ["docker-entrypoint.sh"]
 
 # Run with gunicorn for production
-CMD ["gunicorn", "--bind", "0.0.0.0:3389", "--workers", "4", "--timeout", "120", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:3389", "--workers", "8", "--timeout", "120", "app:app"]
