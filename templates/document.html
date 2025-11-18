@@ -9,6 +9,9 @@
   </div>
   <div class="level-right">
     <div class="level-item">
+      {% if user['role'] == 'student' %}
+      <a href="{{ url_for('download_pdf', doc_id=doc.id) }}" class="button is-primary">Download PDF with Annotations</a>
+      {% endif %}
       <a href="{{ url_for('index') }}" class="button is-light">Document List</a>
     </div>
   </div>

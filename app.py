@@ -4,11 +4,14 @@ import uuid
 import datetime as dt
 from pathlib import Path
 from functools import wraps
-from flask import Flask, render_template, request, redirect, url_for, send_from_directory, jsonify, abort, session
+from flask import Flask, render_template, request, redirect, url_for, send_from_directory, jsonify, abort, session, Response
 from flask import g
 from sqlalchemy import create_engine, text
 import fitz  # PyMuPDF
 import hashlib
+from PIL import Image, ImageDraw, ImageFont
+import io
+import json
 
 BASE_DIR = Path(__file__).parent.resolve()
 UPLOAD_DIR = BASE_DIR / "uploads"
@@ -1154,6 +1157,190 @@ def delete_document(doc_id):
         )
     
     return redirect(url_for("index"))
+
+# PDF export functionality commented out - scale issues not resolved
+# @app.route("/documents/<doc_id>/download-pdf")
+# @login_required
+# @student_required
+# def download_pdf(doc_id):
+#     """Generate and download a PDF with student's annotations"""
+#     user = get_current_user()
+#     
+#     with engine.begin() as conn:
+#         # Verify document exists
+#         doc = conn.execute(
+#             text("SELECT id, filename FROM documents WHERE id = :id"),
+#             {"id": doc_id}
+#         ).first()
+#         
+#         if not doc:
+#             abort(404)
+#         
+#         # Get all pages for this document, ordered by page_index
+#         pages = conn.execute(
+#             text("""
+#                 SELECT id, page_index, image_path 
+#                 FROM pages 
+#                 WHERE document_id = :doc_id 
+#                 ORDER BY page_index ASC
+#             """),
+#             {"doc_id": doc_id}
+#         ).fetchall()
+#         
+#         if not pages:
+#             abort(404)
+#         
+#         # Create a new PDF document
+#         pdf_doc = fitz.open()
+#         
+#         for page_row in pages:
+#             # Load the PNG image
+#             image_path = IMAGES_DIR / page_row.image_path
+#             if not image_path.exists():
+#                 continue
+#             
+#             img = Image.open(image_path)
+#             img_width, img_height = img.size
+#             
+#             # Calculate scale factor: annotations are stored in canvas coordinates (displayed size)
+#             # The canvas size typically matches the displayed image size (img.clientWidth/clientHeight)
+#             # Images in a two-thirds column typically display at ~750-900px wide depending on screen size
+#             # For a standard 8.5x11 PDF at Matrix(2,2): PNG is ~1224x1584px, typically displayed ~800px wide
+#             # So scale_factor = img_width / typical_display_width
+#             # Use a more conservative estimate: assume canvas is typically 700-800px wide
+#             # This gives us a scale factor that should work reasonably well
+#             typical_canvas_width = 750  # Typical canvas width in pixels
+#             scale_factor = img_width / typical_canvas_width
+#             
+#             # Get all annotations for this page by the current user
+#             annotations = conn.execute(
+#                 text("""
+#                     SELECT id, kind, x, y, w, h, text, color
+#                     FROM annotations 
+#                     WHERE page_id = :page_id AND user_id = :user_id
+#                 """),
+#                 {"page_id": page_row.id, "user_id": user['id']}
+#             ).fetchall()
+#             
+#             # Create a drawing context on the image
+#             draw = ImageDraw.Draw(img)
+#             
+#             # Calculate font size: canvas uses 16px, scale to PNG resolution
+#             base_font_size = 16
+#             scaled_font_size = max(20, int(base_font_size * scale_factor))
+#             
+#             # Try to load a font, fallback to default if not available
+#             font = None
+#             try:
+#                 font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", scaled_font_size)
+#             except:
+#                 try:
+#                     font = ImageFont.truetype("arial.ttf", scaled_font_size)
+#                 except:
+#                     try:
+#                         font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", scaled_font_size)
+#                     except:
+#                         try:
+#                             font = ImageFont.load_default()
+#                         except:
+#                             pass
+#             
+#             # Calculate line width: canvas uses 2px, scale proportionally
+#             line_width = max(2, int(2 * scale_factor))
+#             
+#             # Draw each annotation
+#             for ann in annotations:
+#                 color = ann.color or "#000000"
+#                 # Convert hex color to RGB tuple
+#                 try:
+#                     if color.startswith('#'):
+#                         color_rgb = tuple(int(color[i:i+2], 16) for i in (1, 3, 5))
+#                     else:
+#                         color_rgb = (0, 0, 0)
+#                 except:
+#                     color_rgb = (0, 0, 0)
+#                 
+#                 # Scale coordinates from canvas space to image space
+#                 x = float(ann.x) * scale_factor
+#                 y = float(ann.y) * scale_factor
+#                 w = float(ann.w) * scale_factor if ann.w else 0
+#                 h = float(ann.h) * scale_factor if ann.h else 0
+#                 
+#                 if ann.kind == 'rect':
+#                     # Draw rectangle with outline
+#                     draw.rectangle(
+#                         [x, y, x + w, y + h],
+#                         outline=color_rgb,
+#                         fill=None,
+#                         width=line_width
+#                     )
+#                 elif ann.kind == 'text':
+#                     # Draw text annotation with wrapping support
+#                     if ann.text:
+#                         # Handle multi-line text (split by newlines)
+#                         lines = ann.text.split('\n')
+#                         y_offset = y
+#                         line_height = scaled_font_size * 1.2
+#                         
+#                         for line in lines:
+#                             if line.strip():
+#                                 draw.text((x, y_offset), line, fill=color_rgb, font=font)
+#                             y_offset += line_height
+#                 elif ann.kind == 'line':
+#                     # Draw line
+#                     draw.line(
+#                         [(x, y), (x + w, y + h)],
+#                         fill=color_rgb,
+#                         width=line_width
+#                     )
+#                 elif ann.kind == 'freehand':
+#                     # Draw freehand path
+#                     if ann.text:
+#                         try:
+#                             path = json.loads(ann.text) if isinstance(ann.text, str) else ann.text
+#                             if isinstance(path, list) and len(path) > 1:
+#                                 # Scale all points in the path
+#                                 points = [(float(p['x']) * scale_factor, float(p['y']) * scale_factor) 
+#                                          for p in path if isinstance(p, dict) and 'x' in p and 'y' in p]
+#                                 if len(points) > 1:
+#                                     draw.line(points, fill=color_rgb, width=line_width)
+#                         except Exception as e:
+#                             # If parsing fails, skip this annotation
+#                             print(f"Error drawing freehand annotation: {e}")
+#                             pass
+#             
+#             # Convert PIL Image to bytes
+#             img_bytes = io.BytesIO()
+#             img.save(img_bytes, format='PNG')
+#             img_bytes.seek(0)
+#             
+#             # Create a PyMuPDF page sized to match the image
+#             # Convert pixels to points (72 dpi = 72 points per inch)
+#             # PNG was rendered at 2x scale, so divide by 2 to get PDF points
+#             page_width_pts = img_width / 2
+#             page_height_pts = img_height / 2
+#             page = pdf_doc.new_page(width=page_width_pts, height=page_height_pts)
+#             
+#             # Insert the annotated PNG into the page, scaled to fit
+#             img_rect = fitz.Rect(0, 0, page_width_pts, page_height_pts)
+#             page.insert_image(img_rect, stream=img_bytes.getvalue())
+#         
+#         # Save PDF to bytes
+#         pdf_bytes = pdf_doc.tobytes()
+#         pdf_doc.close()
+#         
+#         # Generate filename
+#         base_filename = Path(doc.filename).stem if doc.filename else "document"
+#         pdf_filename = f"{base_filename}_annotated.pdf"
+#         
+#         # Return PDF as download
+#         return Response(
+#             pdf_bytes,
+#             mimetype='application/pdf',
+#             headers={
+#                 'Content-Disposition': f'attachment; filename="{pdf_filename}"'
+#             }
+#         )
 
 @app.route("/users/<int:user_id>/reset-password", methods=["GET", "POST"])
 @teacher_required
