@@ -23,8 +23,8 @@ else
 fi
 
 echo "Starting PDF Annotator container..."
-#docker run -d \
-docker run -i -t \
+#docker run -i -t \
+docker run -d \
     --name pdf-annotator \
     -p 3389:3389 \
     -v "$(pwd)/app.db:/app/app.db" \
