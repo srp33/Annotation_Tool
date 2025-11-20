@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% set document_name = doc.filename if doc and doc.filename else None %}
 {% block content %}
 
 <div class="level mb-4">
@@ -10,7 +11,7 @@
   <div class="level-right">
     <div class="level-item">
       {% if user['role'] == 'student' %}
-      <a href="{{ url_for('download_pdf', doc_id=doc.id) }}" class="button is-primary">Download PDF with Annotations</a>
+      <button id="download-pdf-btn" class="button is-primary is-medium" onclick="downloadDocumentPDF(event)">Download PDF with Annotations</button>
       {% endif %}
       <a href="{{ url_for('index') }}" class="button is-light">Document List</a>
     </div>
@@ -25,5 +26,269 @@
     {% endfor %}
   </div>
 </div>
+
+{% if user['role'] == 'student' %}
+<script>
+  const docId = '{{ doc.id }}';
+  const pages = {{ pages|tojson }};
+  const docFilename = '{{ doc.filename|replace(".pdf", "") }}';
+
+  // Function to draw annotation at full resolution (same as in page.html)
+  function drawAnnotationAtFullRes(ctx, a, scaleX, scaleY) {
+    const color = a.color || '#000000';
+    ctx.strokeStyle = color;
+    ctx.fillStyle = a.kind === 'rect' ? `${color}15` : color;
+    ctx.lineWidth = 2 * scaleX;
+    
+    if (a.kind === 'rect') {
+      const x = a.x * scaleX;
+      const y = a.y * scaleY;
+      const w = a.w * scaleX;
+      const h = a.h * scaleY;
+      ctx.beginPath();
+      ctx.rect(x, y, w, h);
+      ctx.fill();
+      ctx.stroke();
+    } else if (a.kind === 'text') {
+      const fontSize = Math.round(16 * scaleX);
+      ctx.font = `${fontSize}px sans-serif`;
+      ctx.fillStyle = color;
+      
+      if (a.text) {
+        const maxWidth = (a.w || 750 - a.x - 10) * scaleX; // Use typical canvas width as fallback
+        const lineHeight = Math.round(18 * scaleY);
+        let y = a.y * scaleY;
+        
+        const paragraphs = a.text.split('\n');
+        
+        for (let paraIndex = 0; paraIndex < paragraphs.length; paraIndex++) {
+          const paragraph = paragraphs[paraIndex];
+          if (paragraph.trim() === '' && paraIndex < paragraphs.length - 1) {
+            y += lineHeight;
+            continue;
+          }
+          
+          const words = paragraph.split(' ');
+          let line = '';
+          
+          for (let i = 0; i < words.length; i++) {
+            const testLine = line + words[i] + ' ';
+            const metrics = ctx.measureText(testLine);
+            
+            if (metrics.width > maxWidth && i > 0) {
+              ctx.fillText(line, a.x * scaleX, y);
+              line = words[i] + ' ';
+              y += lineHeight;
+            } else {
+              line = testLine;
+            }
+          }
+          if (line.trim()) {
+            ctx.fillText(line, a.x * scaleX, y);
+            y += lineHeight;
+          }
+        }
+      }
+    } else if (a.kind === 'line') {
+      ctx.beginPath();
+      ctx.moveTo(a.x * scaleX, a.y * scaleY);
+      ctx.lineTo((a.x + a.w) * scaleX, (a.y + a.h) * scaleY);
+      ctx.stroke();
+    } else if (a.kind === 'freehand') {
+      if (a.text) {
+        try {
+          const path = JSON.parse(a.text);
+          if (Array.isArray(path) && path.length > 0) {
+            ctx.beginPath();
+            ctx.moveTo(path[0].x * scaleX, path[0].y * scaleY);
+            for (let i = 1; i < path.length; i++) {
+              ctx.lineTo(path[i].x * scaleX, path[i].y * scaleY);
+            }
+            ctx.stroke();
+          }
+        } catch (e) {
+          console.error('Error parsing freehand path:', e);
+        }
+      }
+    }
+  }
+
+  // Function to generate annotated PNG for a page (uses same logic as downloadAnnotatedPNG)
+  function generateAnnotatedPNGForPage(pageImageUrl, annotations) {
+    return new Promise((resolve, reject) => {
+      // Render temporarily in the same container structure to get accurate dimensions
+      // Create a container that matches the page layout (is-two-thirds column)
+      const tempContainer = document.createElement('div');
+      tempContainer.style.position = 'absolute';
+      tempContainer.style.top = '-9999px';
+      tempContainer.style.left = '-9999px';
+      tempContainer.style.width = '66.666%'; // Match is-two-thirds column
+      tempContainer.style.maxWidth = '66.666%';
+      tempContainer.style.visibility = 'hidden';
+      
+      const tempImg = document.createElement('img');
+      tempImg.style.width = '100%';
+      tempImg.style.height = 'auto';
+      tempImg.style.display = 'block';
+      tempImg.crossOrigin = 'anonymous';
+      tempContainer.appendChild(tempImg);
+      document.body.appendChild(tempContainer);
+      
+      // Wait for image to load and layout to settle
+      tempImg.onload = function() {
+        // Force a reflow to ensure dimensions are calculated
+        void tempContainer.offsetWidth;
+        
+        // Use clientWidth/clientHeight to match how canvas is sized (canvas.width = img.clientWidth)
+        // Round to match browser's internal canvas sizing behavior
+        let displayedWidth = Math.round(tempImg.clientWidth || tempImg.offsetWidth);
+        let displayedHeight = Math.round(tempImg.clientHeight || tempImg.offsetHeight);
+        
+        // If dimensions are still 0 or invalid, use natural dimensions with a fallback scale
+        if (!displayedWidth || !displayedHeight || displayedWidth === 0 || displayedHeight === 0) {
+          // Fallback: estimate based on typical display (images are typically shown at ~60-70% of natural size)
+          displayedWidth = Math.round(tempImg.naturalWidth * 0.65);
+          displayedHeight = Math.round(tempImg.naturalHeight * 0.65);
+        }
+        
+        document.body.removeChild(tempContainer);
+        
+        // Load the full-resolution image
+        const fullResImg = new Image();
+        fullResImg.crossOrigin = 'anonymous';
+        
+        fullResImg.onload = function() {
+          // Ensure we have valid dimensions
+          if (!displayedWidth || !displayedHeight || displayedWidth === 0 || displayedHeight === 0) {
+            // Fallback: use natural dimensions with estimated scale
+            displayedWidth = fullResImg.naturalWidth * 0.65;
+            displayedHeight = fullResImg.naturalHeight * 0.65;
+          }
+          
+          // Create a canvas at full image resolution
+          const canvas = document.createElement('canvas');
+          canvas.width = fullResImg.naturalWidth;
+          canvas.height = fullResImg.naturalHeight;
+          const ctx = canvas.getContext('2d');
+          
+          // Draw the full-resolution image
+          ctx.drawImage(fullResImg, 0, 0);
+          
+          // Calculate scale factor from displayed size to full resolution
+          // Use precise division to avoid rounding errors
+          const scaleX = fullResImg.naturalWidth / displayedWidth;
+          const scaleY = fullResImg.naturalHeight / displayedHeight;
+          
+          // Ensure dimensions are integers to match canvas behavior
+          displayedWidth = Math.round(displayedWidth);
+          displayedHeight = Math.round(displayedHeight);
+          
+          // Redraw all annotations at full resolution
+          if (annotations && annotations.length > 0) {
+            annotations.forEach(function(annotation) {
+              drawAnnotationAtFullRes(ctx, annotation, scaleX, scaleY);
+            });
+          }
+          
+          // Convert canvas to data URL (PNG is already flattened - image + annotations combined)
+          try {
+            const dataUrl = canvas.toDataURL('image/png');
+            if (dataUrl && dataUrl.startsWith('data:')) {
+              resolve(dataUrl);
+            } else {
+              reject(new Error('Failed to generate PNG data URL'));
+            }
+          } catch (err) {
+            reject(new Error('Failed to generate PNG: ' + err.message));
+          }
+        };
+        
+        fullResImg.onerror = function() {
+          reject(new Error('Failed to load full-resolution image: ' + pageImageUrl));
+        };
+        
+        fullResImg.src = pageImageUrl;
+      };
+      
+      tempImg.onerror = function() {
+        document.body.removeChild(tempContainer);
+        reject(new Error('Failed to load image: ' + pageImageUrl));
+      };
+      
+      tempImg.src = pageImageUrl;
+    });
+  }
+
+  // Main function to download entire document as PDF
+  async function downloadDocumentPDF(event) {
+    event.preventDefault();
+    
+    const btn = event.target;
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Generating PDF...';
+    
+    try {
+      const { jsPDF } = window.jspdf;
+      let pdf = null;
+      
+        // Process each page
+        for (let i = 0; i < pages.length; i++) {
+          const page = pages[i];
+          btn.textContent = `Processing page ${i + 1} of ${pages.length}...`;
+          
+          // Fetch page data including annotations
+          const pageResponse = await fetch(`${window.BASE_PATH || ''}/page/${page.id}.json`);
+          const pageData = await pageResponse.json();
+          
+          // Construct image URL
+          const imageUrl = `${window.BASE_PATH || ''}/static/images/${page.image_path}`;
+          
+          // Generate annotated PNG using EXACT same logic as single-page download
+          // Returns both data URL and exact dimensions
+          const pagePNG = await generateAnnotatedPNGForPage(imageUrl, pageData.annotations || []);
+        
+        // Use the exact canvas dimensions from PNG generation (1:1 ratio - no scaling, no margins)
+        // This ensures perfect alignment - these are the exact dimensions used when creating the PNG
+        const imgWidthPt = pagePNG.width;
+        const imgHeightPt = pagePNG.height;
+        
+        // Set PDF page size to match PNG exactly (no margins)
+        if (i === 0) {
+          pdf = new jsPDF({
+            orientation: imgWidthPt > imgHeightPt ? 'landscape' : 'portrait',
+            unit: 'pt',
+            format: [imgWidthPt, imgHeightPt],
+            compress: true
+          });
+          // Remove any default margins
+          pdf.setPage(1);
+        } else {
+          pdf.addPage([imgWidthPt, imgHeightPt], imgWidthPt > imgHeightPt ? 'landscape' : 'portrait');
+        }
+        
+        // Get current page and ensure no margins
+        const currentPage = pdf.internal.getCurrentPageInfo().pageNumber;
+        pdf.setPage(currentPage);
+        
+        // Add image to PDF at exact dimensions, starting at (0, 0) with no margins
+        // Use the exact pixel dimensions - 1 pixel = 1 point for perfect alignment
+        pdf.addImage(pagePNG.dataUrl, 'PNG', 0, 0, imgWidthPt, imgHeightPt, undefined, 'FAST');
+      }
+      
+      // Save the PDF
+      pdf.save(`${docFilename}_annotated.pdf`);
+      
+      btn.disabled = false;
+      btn.textContent = originalText;
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Error generating PDF: ' + error.message);
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  }
+</script>
+{% endif %}
 
 {% endblock %}

@@ -12,6 +12,7 @@ import hashlib
 from PIL import Image, ImageDraw, ImageFont
 import io
 import json
+import zipfile
 
 BASE_DIR = Path(__file__).parent.resolve()
 UPLOAD_DIR = BASE_DIR / "uploads"
@@ -27,11 +28,18 @@ app.config["DATABASE_URL"] = f"sqlite:///{BASE_DIR / 'app.db'}"
 # Support for running behind a reverse proxy with URL prefix
 # Set SCRIPT_NAME environment variable to the prefix (e.g., /Annotation_Tool)
 # For local development, leave unset or set to empty string
+# NOTE: We read SCRIPT_NAME from os.environ but don't set it back there.
+# This prevents Gunicorn from trying to process it and causing errors with paths
+# that don't have the prefix (like /favicon.ico).
 script_name = os.environ.get('SCRIPT_NAME', '')
 if script_name:
     # Ensure it starts with / and doesn't end with /
     script_name = '/' + script_name.strip('/')
     app.config['APPLICATION_ROOT'] = script_name
+    # Remove SCRIPT_NAME from os.environ to prevent Gunicorn from processing it
+    # We'll set it only in the WSGI environ via middleware
+    if 'SCRIPT_NAME' in os.environ:
+        del os.environ['SCRIPT_NAME']
     
     # Create a middleware to inject SCRIPT_NAME into the WSGI environment
     # This handles cases where the proxy may or may not strip the prefix
@@ -41,13 +49,51 @@ if script_name:
             self.script_name = script_name
         
         def __call__(self, environ, start_response):
+            # Get the original path info
+            path_info = environ.get('PATH_INFO', '')
+            
+            # CRITICAL: Gunicorn's internal code (gunicorn/http/wsgi.py:183) tries to split
+            # PATH_INFO by SCRIPT_NAME. If SCRIPT_NAME is set but PATH_INFO doesn't contain it,
+            # this causes an IndexError. The error happens in Gunicorn BEFORE our middleware runs.
+            #
+            # Solution: We need to ensure PATH_INFO always contains SCRIPT_NAME when SCRIPT_NAME
+            # is set. However, we can't modify PATH_INFO before Gunicorn processes it in middleware.
+            # 
+            # Workaround: Don't set SCRIPT_NAME in the WSGI environ at all. Instead, only set it
+            # when we know PATH_INFO contains it, OR handle special paths (like favicon) that
+            # don't have the prefix by returning early without setting SCRIPT_NAME.
+            #
+            # But wait - we need SCRIPT_NAME for Flask's url_for to work. So we have a conflict.
+            #
+            # Better solution: For paths without the prefix, prepend SCRIPT_NAME to PATH_INFO
+            # BEFORE setting SCRIPT_NAME. But we can't do that because Gunicorn has already processed it.
+            #
+            # Final solution: Handle favicon requests directly without setting SCRIPT_NAME,
+            # which should prevent Gunicorn from trying to process SCRIPT_NAME for these requests.
+            # But the error happens before our middleware, so this won't work.
+            #
+            # ACTUAL SOLUTION: The issue is that Gunicorn is reading SCRIPT_NAME from somewhere
+            # (possibly os.environ or request headers) and trying to process it. We need to ensure
+            # that SCRIPT_NAME is ONLY set in the WSGI environ by our middleware, not elsewhere.
+            # But we're already doing that.
+            #
+            # Let's try: For favicon, don't set SCRIPT_NAME at all, and handle it directly.
+            is_favicon = path_info == '/favicon.ico' or path_info.endswith('/favicon.ico')
+            
+            if is_favicon and not path_info.startswith(self.script_name):
+                # For favicon without prefix, return 204 directly
+                # Don't set SCRIPT_NAME to avoid Gunicorn's split error
+                start_response('204 No Content', [('Content-Type', 'text/plain')])
+                return [b'']
+            
             # Always set SCRIPT_NAME for url_for to work correctly
             # (Even if proxy strips prefix from PATH_INFO, we need SCRIPT_NAME for URL generation)
             environ['SCRIPT_NAME'] = self.script_name
             
             # Adjust PATH_INFO to remove the prefix if it's present
             # (Some proxies strip it, some don't - handle both cases)
-            path_info = environ.get('PATH_INFO', '')
+            
+            # Handle paths that start with the script name prefix
             if path_info.startswith(self.script_name):
                 # Remove the prefix and ensure PATH_INFO starts with /
                 new_path = path_info[len(self.script_name):]
@@ -58,6 +104,7 @@ if script_name:
             # Just ensure PATH_INFO starts with / (it should already)
             elif path_info and not path_info.startswith('/'):
                 environ['PATH_INFO'] = '/' + path_info
+            # If path_info is empty or just '/', leave it as is
             
             return self.app(environ, start_response)
     
@@ -562,35 +609,51 @@ def document_first_page(doc_id):
 @app.route("/doc/<doc_id>", methods=["GET"])
 @login_required
 def document(doc_id):
-    user = get_current_user()
-    
-    with engine.begin() as conn:
-        # Check access - teachers see their own docs, students can see any teacher-uploaded doc
-        if user['role'] == 'teacher':
-            doc = conn.execute(
-                text("SELECT id, filename FROM documents WHERE id=:id AND (uploaded_by=:user_id OR uploaded_by IS NULL)"), 
-                {"id": doc_id, "user_id": user['id']}
-            ).one_or_none()
-        else:
-            # Student - can see any document (including legacy ones)
-            doc = conn.execute(
-                text("""
-                    SELECT d.id, d.filename 
-                    FROM documents d
-                    WHERE d.id=:id
-                """), 
-                {"id": doc_id}
-            ).one_or_none()
+    try:
+        user = get_current_user()
         
-        if not doc:
-            abort(404)
+        with engine.begin() as conn:
+            # Check access - teachers see their own docs, students can see any teacher-uploaded doc
+            if user['role'] == 'teacher':
+                doc = conn.execute(
+                    text("SELECT id, filename FROM documents WHERE id=:id AND (uploaded_by=:user_id OR uploaded_by IS NULL)"), 
+                    {"id": doc_id, "user_id": user['id']}
+                ).one_or_none()
+            else:
+                # Student - can see any document (including legacy ones)
+                doc = conn.execute(
+                    text("""
+                        SELECT d.id, d.filename 
+                        FROM documents d
+                        WHERE d.id=:id
+                    """), 
+                    {"id": doc_id}
+                ).one_or_none()
+            
+            if not doc:
+                abort(404)
+            
+            pages = conn.execute(text("""
+                SELECT id, page_index, image_path FROM pages
+                WHERE document_id=:id ORDER BY page_index ASC
+            """), {"id": doc_id}).all()
+            
+            # Convert pages to list of dicts for JSON serialization
+            pages_list = [
+                {"id": p.id, "page_index": p.page_index, "image_path": p.image_path}
+                for p in pages
+            ]
+            
+            # Convert doc to dict for template
+            doc_dict = {"id": doc.id, "filename": doc.filename}
         
-        pages = conn.execute(text("""
-            SELECT id, page_index, image_path FROM pages
-            WHERE document_id=:id ORDER BY page_index ASC
-        """), {"id": doc_id}).all()
-    
-    return render_template("document.html", doc=doc, pages=pages, user=user)
+        return render_template("document.html", doc=doc_dict, pages=pages_list, user=user)
+    except Exception as e:
+        import traceback
+        error_msg = f"Error in document route: {str(e)}\n{traceback.format_exc()}"
+        print(error_msg)  # Print to console/logs
+        # Re-raise to show in browser if debug mode, or return 500
+        raise
 
 @app.route("/page/<int:page_id>.json")
 @login_required
@@ -849,6 +912,11 @@ def annotate(page_id):
         "created_at": annotation.created_at
     })
 
+@app.route("/favicon.ico")
+def favicon():
+    # Return 204 No Content for favicon requests to avoid Gunicorn SCRIPT_NAME errors
+    return Response(status=204)
+
 @app.route("/static/images/<path:rel>")
 def serve_image(rel):
     # Serve generated images from images/ directory
@@ -875,6 +943,417 @@ def delete_annotation(ann_id):
             return jsonify({"error": "Annotation not found or you don't have permission to delete it"}), 404
             
     return jsonify({"status": "success"})
+
+def generate_annotated_png(page_id, user, canvas_width=None, canvas_height=None):
+    """
+    Helper function to generate an annotated PNG for a given page.
+    Returns a PIL Image object with annotations rendered.
+    
+    Args:
+        page_id: The page ID
+        user: The current user dict
+        canvas_width: Optional canvas width for accurate scaling
+        canvas_height: Optional canvas height for accurate scaling
+    
+    Returns:
+        PIL Image object with annotations
+    """
+    with engine.begin() as conn:
+        # Get page with document info
+        page_data = conn.execute(
+            text("""
+                SELECT p.*, d.id as document_id, d.filename 
+                FROM pages p 
+                JOIN documents d ON p.document_id = d.id 
+                WHERE p.id = :page_id
+            """),
+            {"page_id": page_id}
+        ).first()
+        
+        if not page_data:
+            return None
+        
+        # Check access - teachers see their own docs, students can see any doc
+        if user['role'] == 'teacher':
+            doc_check = conn.execute(
+                text("SELECT id FROM documents WHERE id=:id AND (uploaded_by=:user_id OR uploaded_by IS NULL)"),
+                {"id": page_data.document_id, "user_id": user['id']}
+            ).first()
+            if not doc_check:
+                return None
+        
+        # Get annotations for this page
+        if user['role'] == 'student':
+            annotations = conn.execute(
+                text("""
+                    SELECT id, kind, x, y, w, h, text, color
+                    FROM annotations 
+                    WHERE page_id = :page_id AND user_id = :user_id
+                """),
+                {"page_id": page_id, "user_id": user['id']}
+            ).fetchall()
+        else:
+            annotations = conn.execute(
+                text("""
+                    SELECT id, kind, x, y, w, h, text, color
+                    FROM annotations 
+                    WHERE page_id = :page_id
+                """),
+                {"page_id": page_id}
+            ).fetchall()
+        
+        # Load the PNG image
+        image_path = IMAGES_DIR / page_data.image_path
+        if not image_path.exists():
+            return None
+        
+        img = Image.open(image_path)
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+        img_width, img_height = img.size
+        
+        # Calculate scale factor
+        if canvas_width and canvas_height and canvas_width > 0 and canvas_height > 0:
+            scale_x = img_width / canvas_width
+            scale_y = img_height / canvas_height
+            scale_factor = scale_x
+        else:
+            standard_letter_width = 1224
+            standard_display_width = 700
+            if img_width > 0:
+                width_ratio = img_width / standard_letter_width
+                estimated_display_width = standard_display_width * width_ratio
+                estimated_display_width = max(600, min(900, estimated_display_width))
+            else:
+                estimated_display_width = standard_display_width
+            scale_factor = img_width / estimated_display_width
+        
+        # Create drawing context
+        draw = ImageDraw.Draw(img)
+        
+        # Calculate font size
+        base_font_size = 16
+        scaled_font_size = round(base_font_size * scale_factor)
+        if scaled_font_size < 1:
+            scaled_font_size = 1
+        
+        # Load font
+        font = None
+        font_paths = [
+            "/System/Library/Fonts/Supplemental/Arial.ttf",
+            "/System/Library/Fonts/Helvetica.ttc",
+            "/Library/Fonts/Arial.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "C:/Windows/Fonts/arial.ttf",
+            "arial.ttf",
+        ]
+        
+        for font_path in font_paths:
+            try:
+                font = ImageFont.truetype(font_path, scaled_font_size)
+                break
+            except:
+                continue
+        
+        if font is None:
+            try:
+                font = ImageFont.load_default()
+            except:
+                pass
+        
+        # Calculate line width and height
+        line_width = max(2, round(2 * scale_factor))
+        line_height = round(18 * scale_factor)
+        if line_height < 1:
+            line_height = 1
+        
+        # Draw each annotation
+        for ann in annotations:
+            color = ann.color or "#000000"
+            try:
+                if color.startswith('#'):
+                    color_rgb = tuple(int(color[i:i+2], 16) for i in (1, 3, 5))
+                else:
+                    color_rgb = (0, 0, 0)
+            except:
+                color_rgb = (0, 0, 0)
+            
+            x = float(ann.x) * scale_factor
+            y = float(ann.y) * scale_factor
+            w = float(ann.w) * scale_factor if ann.w else 0
+            h = float(ann.h) * scale_factor if ann.h else 0
+            
+            if ann.kind == 'rect':
+                overlay = Image.new('RGBA', img.size, (0, 0, 0, 0))
+                overlay_draw = ImageDraw.Draw(overlay)
+                overlay_draw.rectangle(
+                    [x, y, x + w, y + h],
+                    fill=(*color_rgb, 15),
+                    outline=None
+                )
+                img = Image.alpha_composite(img.convert('RGBA'), overlay).convert('RGB')
+                draw = ImageDraw.Draw(img)
+                draw.rectangle(
+                    [x, y, x + w, y + h],
+                    outline=color_rgb,
+                    fill=None,
+                    width=line_width
+                )
+            elif ann.kind == 'text':
+                if ann.text:
+                    lines = ann.text.split('\n')
+                    y_offset = y
+                    max_width = w if w > 0 else (img_width - x - 10 * scale_factor)
+                    
+                    for para_index, paragraph in enumerate(lines):
+                        if paragraph.strip() == '' and para_index < len(lines) - 1:
+                            y_offset += line_height
+                            continue
+                        
+                        words = paragraph.split(' ')
+                        line = ''
+                        
+                        for word in words:
+                            test_line = line + word + ' '
+                            
+                            if font:
+                                try:
+                                    bbox = draw.textbbox((0, 0), test_line, font=font)
+                                    text_width = bbox[2] - bbox[0]
+                                except:
+                                    text_width = len(test_line) * scaled_font_size * 0.6
+                            else:
+                                text_width = len(test_line) * scaled_font_size * 0.6
+                            
+                            if text_width > max_width and line:
+                                draw.text((x, y_offset), line, fill=color_rgb, font=font)
+                                line = word + ' '
+                                y_offset += line_height
+                            else:
+                                line = test_line
+                        
+                        if line.strip():
+                            draw.text((x, y_offset), line, fill=color_rgb, font=font)
+                            y_offset += line_height
+            elif ann.kind == 'line':
+                draw.line(
+                    [(x, y), (x + w, y + h)],
+                    fill=color_rgb,
+                    width=line_width
+                )
+            elif ann.kind == 'freehand':
+                if ann.text:
+                    try:
+                        path = json.loads(ann.text) if isinstance(ann.text, str) else ann.text
+                        if isinstance(path, list) and len(path) > 1:
+                            points = [(float(p['x']) * scale_factor, float(p['y']) * scale_factor) 
+                                     for p in path if isinstance(p, dict) and 'x' in p and 'y' in p]
+                            if len(points) > 1:
+                                draw.line(points, fill=color_rgb, width=line_width)
+                    except Exception as e:
+                        print(f"Error drawing freehand annotation: {e}")
+                        pass
+    
+    return img
+
+@app.route("/page/<int:page_id>/download", methods=["GET"])
+@login_required
+def download_page_png(page_id):
+    """Download a page as PNG with annotations rendered on it"""
+    user = get_current_user()
+    
+    # Get canvas dimensions from query parameters (if provided)
+    canvas_width = request.args.get('canvas_width', type=float)
+    canvas_height = request.args.get('canvas_height', type=float)
+    
+    # Use the helper function to generate the annotated image
+    img = generate_annotated_png(page_id, user, canvas_width, canvas_height)
+    
+    if img is None:
+        abort(404)
+    
+    # Get page info for filename
+    with engine.begin() as conn:
+        page_data = conn.execute(
+            text("""
+                SELECT p.page_index, d.filename 
+                FROM pages p 
+                JOIN documents d ON p.document_id = d.id 
+                WHERE p.id = :page_id
+            """),
+            {"page_id": page_id}
+        ).first()
+        
+        if not page_data:
+            abort(404)
+        
+        base_filename = Path(page_data.filename).stem if page_data.filename else "document"
+        png_filename = f"{base_filename}_page_{page_data.page_index + 1}_annotated.png"
+    
+    # Convert PIL Image to bytes
+    img_bytes = io.BytesIO()
+    img.save(img_bytes, format='PNG')
+    img_bytes.seek(0)
+    
+    # Return PNG as download
+    return Response(
+        img_bytes.getvalue(),
+        mimetype='image/png',
+        headers={
+            'Content-Disposition': f'attachment; filename="{png_filename}"'
+        }
+    )
+
+@app.route("/doc/<doc_id>/download-pdf", methods=["GET"])
+@login_required
+def download_document_pdf(doc_id):
+    """Download entire document as PDF with annotations rendered on each page"""
+    user = get_current_user()
+    
+    with engine.begin() as conn:
+        # Check access
+        if user['role'] == 'teacher':
+            doc = conn.execute(
+                text("SELECT id, filename FROM documents WHERE id=:id AND (uploaded_by=:user_id OR uploaded_by IS NULL)"),
+                {"id": doc_id, "user_id": user['id']}
+            ).first()
+        else:
+            doc = conn.execute(
+                text("SELECT id, filename FROM documents WHERE id=:id"),
+                {"id": doc_id}
+            ).first()
+        
+        if not doc:
+            abort(404)
+        
+        # Get all pages for this document, ordered by page_index
+        pages = conn.execute(
+            text("SELECT id, page_index FROM pages WHERE document_id=:doc_id ORDER BY page_index ASC"),
+            {"doc_id": doc_id}
+        ).fetchall()
+        
+        if not pages:
+            abort(404)
+    
+    # Generate annotated PNG for each page
+    png_images = []
+    for page in pages:
+        img = generate_annotated_png(page.id, user)
+        if img:
+            # Convert PIL Image to PNG bytes
+            img_bytes = io.BytesIO()
+            img.save(img_bytes, format='PNG')
+            img_bytes.seek(0)
+            png_images.append(img_bytes)
+    
+    if not png_images:
+        abort(404)
+    
+    # Create a new PDF document
+    pdf_doc = fitz.open()  # Create empty PDF
+    
+    # Add each PNG as a page in the PDF
+    for png_bytes in png_images:
+        # Open the PNG image
+        img_bytes_data = png_bytes.getvalue()
+        img_doc = fitz.open(stream=img_bytes_data, filetype="png")
+        
+        # Get the first (and only) page from the PNG
+        img_page = img_doc[0]
+        
+        # Get the page dimensions
+        rect = img_page.rect
+        
+        # Create a new page in the PDF with the same dimensions
+        pdf_page = pdf_doc.new_page(width=rect.width, height=rect.height)
+        
+        # Insert the PNG image into the PDF page
+        pdf_page.insert_image(rect, stream=img_bytes_data)
+        
+        # Close the image document
+        img_doc.close()
+    
+    # Generate PDF bytes
+    pdf_bytes = pdf_doc.tobytes()
+    pdf_doc.close()
+    
+    # Generate filename
+    base_filename = Path(doc.filename).stem if doc.filename else "document"
+    pdf_filename = f"{base_filename}_annotated.pdf"
+    
+    # Return PDF as download
+    return Response(
+        pdf_bytes,
+        mimetype='application/pdf',
+        headers={
+            'Content-Disposition': f'attachment; filename="{pdf_filename}"'
+        }
+    )
+
+@app.route("/doc/<doc_id>/download-zip", methods=["GET"])
+@login_required
+def download_document_zip(doc_id):
+    """Download entire document as ZIP file containing annotated PNGs for each page"""
+    user = get_current_user()
+    
+    with engine.begin() as conn:
+        # Check access
+        if user['role'] == 'teacher':
+            doc = conn.execute(
+                text("SELECT id, filename FROM documents WHERE id=:id AND (uploaded_by=:user_id OR uploaded_by IS NULL)"),
+                {"id": doc_id, "user_id": user['id']}
+            ).first()
+        else:
+            doc = conn.execute(
+                text("SELECT id, filename FROM documents WHERE id=:id"),
+                {"id": doc_id}
+            ).first()
+        
+        if not doc:
+            abort(404)
+        
+        # Get all pages for this document, ordered by page_index
+        pages = conn.execute(
+            text("SELECT id, page_index FROM pages WHERE document_id=:doc_id ORDER BY page_index ASC"),
+            {"doc_id": doc_id}
+        ).fetchall()
+        
+        if not pages:
+            abort(404)
+    
+    # Generate annotated PNG for each page (using the same logic that works for single-page downloads)
+    # Create ZIP file in memory
+    zip_buffer = io.BytesIO()
+    base_filename = Path(doc.filename).stem if doc.filename else "document"
+    
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        for page in pages:
+            img = generate_annotated_png(page.id, user)
+            if img:
+                # Convert PIL Image to PNG bytes
+                img_bytes = io.BytesIO()
+                img.save(img_bytes, format='PNG')
+                img_bytes.seek(0)
+                
+                # Add to ZIP with descriptive filename
+                png_filename = f"{base_filename}_page_{page.page_index + 1}_annotated.png"
+                zip_file.writestr(png_filename, img_bytes.getvalue())
+    
+    if zip_buffer.tell() == 0:
+        abort(404)
+    
+    zip_buffer.seek(0)
+    zip_filename = f"{base_filename}_annotated.zip"
+    
+    # Return ZIP as download
+    return Response(
+        zip_buffer.getvalue(),
+        mimetype='application/zip',
+        headers={
+            'Content-Disposition': f'attachment; filename="{zip_filename}"'
+        }
+    )
 
 @app.route("/page/<int:page_id>/reaction", methods=["GET", "POST"])
 @login_required

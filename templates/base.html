@@ -12,6 +12,8 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.2/css/bulma.min.css">
   <!-- Font Awesome for icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <!-- jsPDF for PDF generation -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <style>
     /* Custom color scheme - override Bulma defaults with modern, high-contrast colors */
     :root {
@@ -177,15 +179,28 @@
       <div class="level" style="margin-bottom: 0.5rem;">
         <div class="level-left">
           <div class="level-item">
-            <h1 class="title is-6" style="margin-bottom: 0;">
-              <a href="{{ url_for('index') }}" style="color: inherit; text-decoration: none;">Home</a>
-            </h1>
+            <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+              <a href="{{ url_for('index') }}" class="button is-light is-small" style="text-decoration: none;">
+                <span class="icon is-small">
+                  <i class="fas fa-home"></i>
+                </span>
+                <span>Home</span>
+              </a>
+              {% block navigation_buttons %}{% endblock %}
+              {% block document_name %}
+              {% if document_name is defined and document_name %}
+              <span class="has-text-grey" style="font-size: 0.875rem; font-weight: 500;">|</span>
+              <span class="has-text-dark" style="font-size: 0.875rem; font-weight: 500;">{{ document_name }}</span>
+              {% endif %}
+              {% endblock %}
+              {% block download_button %}{% endblock %}
+            </div>
           </div>
         </div>
         {% if session.get('user_id') %}
         <div class="level-right">
           <div class="level-item">
-            <span class="mr-3">Logged in as <strong>{{ session.get('username') }}</strong> ({{ session.get('role') }})</span>
+            <span class="mr-3" style="font-size: 0.875rem;">Logged in as <strong>{{ session.get('username') }}</strong> ({{ session.get('role') }})</span>
             <a href="{{ url_for('logout') }}" class="button is-light is-small">Logout</a>
           </div>
         </div>

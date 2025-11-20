@@ -110,15 +110,12 @@
 function goToDocument() {
   const select = document.getElementById('document-select');
   const docId = select.value;
-  const selectedOption = select.options[select.selectedIndex];
   
   if (docId) {
-    document.getElementById('selected-doc-name').textContent = selectedOption.text;
-    document.getElementById('view-doc-link').href = (window.BASE_PATH || '') + '/doc/' + docId + '/first';
-    document.getElementById('selected-document').style.display = 'block';
-  } else {
-    document.getElementById('selected-document').style.display = 'none';
+    // Automatically navigate to the document's first page
+    window.location.href = (window.BASE_PATH || '') + '/doc/' + docId + '/first';
   }
+  // If no document selected (empty value), do nothing
 }
 </script>
 

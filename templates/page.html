@@ -1,23 +1,27 @@
 {% extends "base.html" %}
+{% set document_name = doc.filename if doc and doc.filename else None %}
+{% block download_button %}
+{% if user['role'] == 'student' %}
+<button id="download-pdf-btn" class="button is-outlined is-small" onclick="downloadDocumentPDF(event)" style="color: #000000; border-color: #000000;">Download</button>
+{% endif %}
+{% endblock %}
+{% block navigation_buttons %}
+{% if page and page.document_id %}
+<div style="display: flex; align-items: center; gap: 0.5rem; margin-left: 0.5rem;">
+  <a class="button is-light is-small" href="{{ url_for('document', doc_id=page.document_id) }}">Pages</a>
+  {% if prev_page_id %}
+  <a class="button is-light is-small" href="{{ url_for('page', page_id=prev_page_id) }}">← Previous</a>
+  {% endif %}
+  {% if next_page_id %}
+  <a class="button is-light is-small" href="{{ url_for('page', page_id=next_page_id) }}">Next →</a>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}
 {% block content %}
 <!-- Debug: User role is {{ user['role'] }} -->
 <div class="box">
-  <!-- Navigation buttons at the top -->
   <div class="level mb-4">
-    <div class="level-left">
-      <div class="level-item">
-        <div class="buttons">
-          <a class="button is-light" href="{{ url_for('index') }}">Document List</a>
-          <a class="button is-light" href="{{ url_for('document', doc_id=page.document_id) }}">Page List</a>
-          {% if prev_page_id %}
-          <a class="button is-light" href="{{ url_for('page', page_id=prev_page_id) }}">← Previous</a>
-          {% endif %}
-          {% if next_page_id %}
-          <a class="button is-light" href="{{ url_for('page', page_id=next_page_id) }}">Next →</a>
-          {% endif %}
-        </div>
-      </div>
-    </div>
     <div class="level-right">
       <div class="level-item">
         <p class="has-text-grey">Page {{ page.page_index + 1 }}</p>
@@ -32,12 +36,43 @@
       {% if user['role'] == 'student' %}
       <div class="toolbar mb-4">
         <div class="buttons">
-          <button class="button is-link is-outlined" id="tool-rect">Rectangle</button>
-          <button class="button is-warning is-outlined" id="tool-line">Line</button>
-          <button class="button is-success is-outlined" id="tool-freehand">Freehand</button>
-          <button class="button is-info is-outlined" id="tool-text">Text</button>
-          <input class="input" id="color-input" type="color" value="#000000" style="max-width:120px">
-          <button class="button is-danger is-outlined" id="tool-delete">Delete</button>
+          <div class="dropdown is-hoverable" id="color-picker-container">
+            <div class="dropdown-trigger">
+              <button class="button is-outlined" id="color-picker-btn" aria-haspopup="true" aria-controls="color-menu" style="min-width: 80px; border-color: #000000; background-color: transparent; color: #000000;">
+                Color
+              </button>
+            </div>
+            <div class="dropdown-menu" id="color-menu" role="menu">
+              <div class="dropdown-content" style="padding: 0.5rem;">
+                <div class="color-picker-grid" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.5rem; width: 200px;">
+                  <button class="color-btn" data-color="#000000" style="width: 100%; height: 35px; border: 2px solid #ccc; cursor: pointer; background-color: #000000;" title="Black"></button>
+                  <button class="color-btn" data-color="#FFFFFF" style="width: 100%; height: 35px; border: 2px solid #ccc; cursor: pointer; background-color: #FFFFFF;" title="White"></button>
+                  <button class="color-btn" data-color="#FF0000" style="width: 100%; height: 35px; border: 2px solid #ccc; cursor: pointer; background-color: #FF0000;" title="Red"></button>
+                  <button class="color-btn" data-color="#00FF00" style="width: 100%; height: 35px; border: 2px solid #ccc; cursor: pointer; background-color: #00FF00;" title="Green"></button>
+                  <button class="color-btn" data-color="#0000FF" style="width: 100%; height: 35px; border: 2px solid #ccc; cursor: pointer; background-color: #0000FF;" title="Blue"></button>
+                  <button class="color-btn" data-color="#FFFF00" style="width: 100%; height: 35px; border: 2px solid #ccc; cursor: pointer; background-color: #FFFF00;" title="Yellow"></button>
+                  <button class="color-btn" data-color="#FF00FF" style="width: 100%; height: 35px; border: 2px solid #ccc; cursor: pointer; background-color: #FF00FF;" title="Magenta"></button>
+                  <button class="color-btn" data-color="#00FFFF" style="width: 100%; height: 35px; border: 2px solid #ccc; cursor: pointer; background-color: #00FFFF;" title="Cyan"></button>
+                  <button class="color-btn" data-color="#FFA500" style="width: 100%; height: 35px; border: 2px solid #ccc; cursor: pointer; background-color: #FFA500;" title="Orange"></button>
+                  <button class="color-btn" data-color="#800080" style="width: 100%; height: 35px; border: 2px solid #ccc; cursor: pointer; background-color: #800080;" title="Purple"></button>
+                  <button class="color-btn" data-color="#FFC0CB" style="width: 100%; height: 35px; border: 2px solid #ccc; cursor: pointer; background-color: #FFC0CB;" title="Pink"></button>
+                  <button class="color-btn" data-color="#A52A2A" style="width: 100%; height: 35px; border: 2px solid #ccc; cursor: pointer; background-color: #A52A2A;" title="Brown"></button>
+                  <button class="color-btn" data-color="#808080" style="width: 100%; height: 35px; border: 2px solid #ccc; cursor: pointer; background-color: #808080;" title="Gray"></button>
+                  <button class="color-btn" data-color="#008000" style="width: 100%; height: 35px; border: 2px solid #ccc; cursor: pointer; background-color: #008000;" title="Dark Green"></button>
+                  <button class="color-btn" data-color="#000080" style="width: 100%; height: 35px; border: 2px solid #ccc; cursor: pointer; background-color: #000080;" title="Navy"></button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <input class="input" id="color-input" type="hidden" value="#000000">
+          <button class="button is-dark is-outlined" id="tool-rect">Rectangle</button>
+          <button class="button is-dark is-outlined" id="tool-line">Line</button>
+          <button class="button is-dark is-outlined" id="tool-freehand">Freehand</button>
+          <button class="button is-dark is-outlined" id="tool-text">Text</button>
+          <button class="button is-dark is-outlined" id="tool-delete">Delete</button>
+          <button class="button is-dark is-outlined" id="download-png-btn" href="#" onclick="downloadAnnotatedPNG(event); return false;">
+            <span>Download PNG</span>
+          </button>
         </div>
       </div>
       {% endif %}
@@ -250,11 +285,6 @@
 </div>
 
 {% if user['role'] == 'student' %}
-{# PDF download commented out - scale issues not resolved #}
-{# <div class="mt-4">
-  <a href="{{ url_for('download_pdf', doc_id=page.document_id) }}" class="button is-primary is-outlined is-medium" download>Download PDF</a>
-</div> #}
-
 <!-- Text Input Modal -->
 <div class="modal" id="text-modal">
   <div class="modal-background"></div>
@@ -297,6 +327,7 @@
   const toolFreehandBtn = document.getElementById('tool-freehand');
   const deleteBtn   = document.getElementById('tool-delete');
   const colorInput = document.getElementById('color-input');
+  const colorPickerBtn = document.getElementById('color-picker-btn');
   
   // Text modal elements
   const textModal = document.getElementById('text-modal');
@@ -310,8 +341,48 @@
   let startX = 0, startY = 0;
   let freehandPath = [];
   let pendingTextPosition = null; // Store x, y when text tool is clicked
-  let colorInputBlurTime = 0; // Track when color input loses focus to prevent immediate canvas clicks
-  let colorInputWasFocused = false; // Track if color input was recently focused
+  
+  // Color picker setup
+  const colorButtons = document.querySelectorAll('.color-btn');
+  colorButtons.forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const color = btn.getAttribute('data-color');
+      colorInput.value = color;
+      colorPickerBtn.style.backgroundColor = 'transparent'; // Keep background transparent for outlined style
+      colorPickerBtn.style.borderColor = color; // Update border color to match selected color
+      colorPickerBtn.style.color = color; // Update text color to match selected color
+      // Close dropdown
+      const dropdown = document.getElementById('color-picker-container');
+      dropdown.classList.remove('is-active');
+    });
+  });
+  
+  // Helper function to convert hex to RGB
+  function hexToRgb(hex) {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ? {
+      r: parseInt(result[1], 16),
+      g: parseInt(result[2], 16),
+      b: parseInt(result[3], 16)
+    } : null;
+  }
+  
+  // Initialize color picker button
+  colorPickerBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const dropdown = document.getElementById('color-picker-container');
+    dropdown.classList.toggle('is-active');
+  });
+  
+  // Close dropdown when clicking outside
+  document.addEventListener('click', (e) => {
+    const dropdown = document.getElementById('color-picker-container');
+    if (!dropdown.contains(e.target)) {
+      dropdown.classList.remove('is-active');
+    }
+  });
 
   function setActiveTool(selectedTool) {
     tool = selectedTool;
@@ -364,34 +435,6 @@
   window.addEventListener('resize', resizeCanvasToImage);
   if (img.complete) resizeCanvasToImage();
   
-  // Track color input focus/blur to prevent canvas clicks immediately after color selection
-  colorInput.addEventListener('focus', () => {
-    colorInputWasFocused = true;
-  });
-  
-  colorInput.addEventListener('blur', () => {
-    colorInputBlurTime = Date.now();
-    // Keep the flag true for a short time after blur to prevent immediate canvas clicks
-    // The flag will be checked in the canvas mousedown handler
-    setTimeout(() => {
-      colorInputWasFocused = false;
-    }, 500);
-  });
-  
-  colorInput.addEventListener('change', () => {
-    colorInputBlurTime = Date.now();
-  });
-  
-  colorInput.addEventListener('input', () => {
-    colorInputBlurTime = Date.now();
-  });
-  
-  // Also track clicks on color input directly
-  colorInput.addEventListener('click', (e) => {
-    e.stopPropagation(); // Prevent event from bubbling to canvas
-    colorInputWasFocused = true;
-  });
-  
   // Text modal functions
   function showTextModal(x, y) {
     if (!textModal || !textModalInput) return;
@@ -430,52 +473,22 @@
     const x = pendingTextPosition.x;
     const y = pendingTextPosition.y;
     
-    // Calculate text dimensions for wrapping (handles both explicit line breaks and word wrapping)
+    // Calculate text dimensions - no wrapping, just measure actual lines
     ctx.font = '16px sans-serif';
-    const maxWidth = canvas.width - x - 10; // Leave 10px margin from right edge
     const lineHeight = 18;
     
-    // Split by actual line breaks first
-    const paragraphs = txt.split('\n');
-    let lineCount = 0;
+    // Split by line breaks and measure each line
+    const lines = txt.split('\n');
     let maxLineWidth = 0;
     
-    for (let paraIndex = 0; paraIndex < paragraphs.length; paraIndex++) {
-      const paragraph = paragraphs[paraIndex];
-      if (paragraph.trim() === '' && paraIndex < paragraphs.length - 1) {
-            // Empty line
-            lineCount++;
-            continue;
-          }
-      
-      // Word wrap within this paragraph
-      const words = paragraph.split(' ');
-      let line = '';
-      
-      for (let i = 0; i < words.length; i++) {
-        const testLine = line + words[i] + ' ';
-        const metrics = ctx.measureText(testLine);
-        
-        if (metrics.width > maxWidth && i > 0) {
-          maxLineWidth = Math.max(maxLineWidth, ctx.measureText(line).width);
-          line = words[i] + ' ';
-          lineCount++;
-        } else {
-          line = testLine;
-          maxLineWidth = Math.max(maxLineWidth, metrics.width);
-        }
-      }
-      
-      // Count remaining line from this paragraph
-      if (line.trim()) {
-        lineCount++;
-        maxLineWidth = Math.max(maxLineWidth, ctx.measureText(line).width);
-      }
+    for (let i = 0; i < lines.length; i++) {
+      const metrics = ctx.measureText(lines[i]);
+      maxLineWidth = Math.max(maxLineWidth, metrics.width);
     }
     
     // Store width and height for hit testing and display
     const textWidth = maxLineWidth;
-    const textHeight = lineCount * lineHeight;
+    const textHeight = lines.length * lineHeight;
     
     saveAnnotation({ 
       kind: 'text', 
@@ -536,44 +549,16 @@
       ctx.fillStyle = color;
       
       if (a.text) {
-        // Handle both explicit line breaks and word wrapping
-        const maxWidth = a.w || (canvas.width - a.x - 10); // Leave 10px margin from right edge
-        const lineHeight = 18; // Line height for wrapped text
+        // No word wrapping - only respect explicit line breaks
+        const lineHeight = 18;
         let y = a.y;
         
-        // Split by actual line breaks first
-        const paragraphs = a.text.split('\n');
+        // Split by line breaks and render each line as-is
+        const lines = a.text.split('\n');
         
-        for (let paraIndex = 0; paraIndex < paragraphs.length; paraIndex++) {
-          const paragraph = paragraphs[paraIndex];
-          if (paragraph.trim() === '' && paraIndex < paragraphs.length - 1) {
-            // Empty line, just advance y
-            y += lineHeight;
-            continue;
-          }
-          
-          // Word wrap within this paragraph
-          const words = paragraph.split(' ');
-          let line = '';
-          
-          for (let i = 0; i < words.length; i++) {
-            const testLine = line + words[i] + ' ';
-            const metrics = ctx.measureText(testLine);
-            
-            if (metrics.width > maxWidth && i > 0) {
-              // Draw current line and start new line
-              ctx.fillText(line, a.x, y);
-              line = words[i] + ' ';
-              y += lineHeight;
-            } else {
-              line = testLine;
-            }
-          }
-          // Draw remaining line from this paragraph
-          if (line.trim()) {
-            ctx.fillText(line, a.x, y);
-            y += lineHeight;
-          }
+        for (let i = 0; i < lines.length; i++) {
+          ctx.fillText(lines[i], a.x, y);
+          y += lineHeight;
         }
       }
     } else if (a.kind === 'line') {
@@ -619,36 +604,16 @@
   }
 
   canvas.addEventListener('mousedown', (e) => {
-    // Prevent triggering canvas actions when clicking on color input or modal
+    // Prevent triggering canvas actions when clicking on color picker or modal
     const target = e.target;
-    if (target === colorInput || target.closest('#text-modal') || target.closest('.modal')) {
+    if (target.closest('#color-picker-container') || target.closest('#text-modal') || target.closest('.modal')) {
       return;
     }
     
-    // Check if click originated from color picker (native color input can trigger events)
-    if (e.relatedTarget === colorInput || e.fromElement === colorInput) {
-      return;
-    }
-    
-    // Check if click is within toolbar area (where color input is)
+    // Check if click is within toolbar area
     const toolbar = document.querySelector('.toolbar');
     if (toolbar && toolbar.contains(target)) {
       return;
-    }
-    
-    // Check if color input is currently focused (color picker might still be open)
-    if (document.activeElement === colorInput) {
-      return;
-    }
-    
-    // Prevent canvas clicks for 500ms after color input loses focus (to handle color picker closing)
-    // Also check if color input was recently focused to catch edge cases
-    const timeSinceBlur = Date.now() - colorInputBlurTime;
-    if ((timeSinceBlur < 500 && colorInputBlurTime > 0) || colorInputWasFocused) {
-      // Only prevent if tool is 'text' - other tools can work normally
-      if (tool === 'text') {
-        return;
-      }
     }
     
     const coords = getCanvasCoordinates(e);
@@ -969,6 +934,457 @@
         alert('Failed to save reaction. Please try again.');
       });
     });
+  }
+
+  // Function to draw annotation at full resolution
+  function drawAnnotationAtFullRes(ctx, a, scaleX, scaleY) {
+    const color = a.color || '#000000';
+    ctx.strokeStyle = color;
+    ctx.fillStyle = a.kind === 'rect' ? `${color}15` : color;
+    ctx.lineWidth = 2 * scaleX; // Scale line width proportionally
+    
+    if (a.kind === 'rect') {
+      const x = a.x * scaleX;
+      const y = a.y * scaleY;
+      const w = a.w * scaleX;
+      const h = a.h * scaleY;
+      ctx.beginPath();
+      ctx.rect(x, y, w, h);
+      ctx.fill();
+      ctx.stroke();
+    } else if (a.kind === 'text') {
+      // Scale font size proportionally
+      const fontSize = Math.round(16 * scaleX);
+      ctx.font = `${fontSize}px sans-serif`;
+      ctx.fillStyle = color;
+      
+      if (a.text) {
+        // No word wrapping - only respect explicit line breaks
+        const lineHeight = Math.round(18 * scaleY);
+        let y = a.y * scaleY;
+        
+        // Split by line breaks and render each line as-is
+        const lines = a.text.split('\n');
+        
+        for (let i = 0; i < lines.length; i++) {
+          ctx.fillText(lines[i], a.x * scaleX, y);
+          y += lineHeight;
+        }
+      }
+    } else if (a.kind === 'line') {
+      ctx.beginPath();
+      ctx.moveTo(a.x * scaleX, a.y * scaleY);
+      ctx.lineTo((a.x + a.w) * scaleX, (a.y + a.h) * scaleY);
+      ctx.stroke();
+    } else if (a.kind === 'freehand') {
+      if (a.text) {
+        try {
+          const path = JSON.parse(a.text);
+          if (Array.isArray(path) && path.length > 0) {
+            ctx.beginPath();
+            ctx.moveTo(path[0].x * scaleX, path[0].y * scaleY);
+            for (let i = 1; i < path.length; i++) {
+              ctx.lineTo(path[i].x * scaleX, path[i].y * scaleY);
+            }
+            ctx.stroke();
+          }
+        } catch (e) {
+          console.error('Error parsing freehand path:', e);
+        }
+      }
+    }
+  }
+
+  // Download PNG with annotations - render at full resolution
+  function downloadAnnotatedPNG(event) {
+    event.preventDefault();
+    
+    // Get the displayed image element
+    const img = document.getElementById('page-img');
+    if (!img) {
+      alert('Image not found');
+      return;
+    }
+    
+    // Create a new canvas to combine image and annotations
+    const downloadCanvas = document.createElement('canvas');
+    
+    // Load the full-resolution image
+    const fullResImg = new Image();
+    fullResImg.crossOrigin = 'anonymous'; // Handle CORS if needed
+    
+    fullResImg.onload = function() {
+      // Set canvas to full image resolution
+      downloadCanvas.width = fullResImg.naturalWidth;
+      downloadCanvas.height = fullResImg.naturalHeight;
+      
+      const ctx = downloadCanvas.getContext('2d');
+      
+      // Draw the full-resolution image
+      ctx.drawImage(fullResImg, 0, 0);
+      
+      // Calculate scale factor from displayed size to full resolution
+      // CRITICAL: Use canvas dimensions, not img.clientWidth, because annotations are stored
+      // relative to canvas.width/height (which may be rounded integers)
+      const displayedWidth = canvas.width;
+      const displayedHeight = canvas.height;
+      const scaleX = fullResImg.naturalWidth / displayedWidth;
+      const scaleY = fullResImg.naturalHeight / displayedHeight;
+      
+      // Redraw all annotations at full resolution
+      existing.forEach(function(annotation) {
+        drawAnnotationAtFullRes(ctx, annotation, scaleX, scaleY);
+      });
+      
+      // Convert to blob and download
+      downloadCanvas.toBlob(function(blob) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `{{ doc.filename|replace('.pdf', '') }}_page_{{ page.page_index + 1 }}_annotated.png`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 'image/png');
+    };
+    
+    fullResImg.onerror = function() {
+      // Fallback: capture at displayed resolution if full-res fails
+      downloadCanvas.width = img.clientWidth;
+      downloadCanvas.height = img.clientHeight;
+      
+      const ctx = downloadCanvas.getContext('2d');
+      
+      // Draw the displayed image
+      ctx.drawImage(img, 0, 0);
+      
+      // Draw the annotation canvas
+      ctx.drawImage(canvas, 0, 0);
+      
+      // Convert to blob and download
+      downloadCanvas.toBlob(function(blob) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `{{ doc.filename|replace('.pdf', '') }}_page_{{ page.page_index + 1 }}_annotated.png`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 'image/png');
+    };
+    
+    // Load the full-resolution image
+    fullResImg.src = img.src;
+  }
+
+  // Function to generate annotated PNG for a page - uses EXACT same logic as downloadAnnotatedPNG
+  // Returns: { dataUrl: string, width: number, height: number }
+  function generateAnnotatedPNGForPage(pageImageUrl, annotations) {
+    return new Promise((resolve, reject) => {
+      // Check if this is the current page - if so, use exact same logic as downloadAnnotatedPNG
+      const currentImg = document.getElementById('page-img');
+      let displayedWidth, displayedHeight;
+      
+      // Normalize URLs for comparison
+      const normalizeUrl = (url) => {
+        try {
+          const u = new URL(url, window.location.href);
+          return u.pathname + u.search;
+        } catch {
+          return url;
+        }
+      };
+      
+      const currentImgSrc = currentImg ? normalizeUrl(currentImg.src) : null;
+      const targetImgSrc = normalizeUrl(pageImageUrl);
+      
+      if (currentImg && currentImgSrc === targetImgSrc && currentImg.clientWidth > 0) {
+        // Same page - use canvas dimensions (annotations are stored relative to canvas, not img)
+        // This is EXACTLY what downloadAnnotatedPNG does
+        const currentCanvas = document.getElementById('annot-canvas');
+        if (currentCanvas && currentCanvas.width > 0 && currentCanvas.height > 0) {
+          displayedWidth = currentCanvas.width;
+          displayedHeight = currentCanvas.height;
+        } else {
+          // Fallback to image dimensions if canvas not available
+          displayedWidth = currentImg.clientWidth;
+          displayedHeight = currentImg.clientHeight;
+        }
+        generatePNG();
+      } else {
+        // Different page - need to measure it accurately to match how canvas would be sized
+        // Create a temporary image element in the same container structure
+        const tempContainer = document.createElement('div');
+        tempContainer.style.position = 'absolute';
+        tempContainer.style.top = '-9999px';
+        tempContainer.style.left = '-9999px';
+        tempContainer.style.width = '66.666%'; // Match is-two-thirds column
+        tempContainer.style.maxWidth = '66.666%';
+        tempContainer.style.visibility = 'hidden';
+        
+        const tempImg = document.createElement('img');
+        tempImg.style.width = '100%';
+        tempImg.style.height = 'auto';
+        tempImg.style.display = 'block';
+        tempImg.crossOrigin = 'anonymous';
+        tempContainer.appendChild(tempImg);
+        document.body.appendChild(tempContainer);
+        
+        tempImg.onload = function() {
+          // Force reflow
+          void tempContainer.offsetWidth;
+          
+          // Use clientWidth/clientHeight, but round to integers to match canvas behavior
+          // Canvas dimensions are always integers, so annotations are stored relative to rounded dimensions
+          displayedWidth = Math.round(tempImg.clientWidth);
+          displayedHeight = Math.round(tempImg.clientHeight);
+          
+          if (!displayedWidth || !displayedHeight || displayedWidth === 0 || displayedHeight === 0) {
+            document.body.removeChild(tempContainer);
+            reject(new Error('Failed to get valid dimensions for image'));
+            return;
+          }
+          
+          document.body.removeChild(tempContainer);
+          generatePNG();
+        };
+        
+        tempImg.onerror = function() {
+          document.body.removeChild(tempContainer);
+          reject(new Error('Failed to load image: ' + pageImageUrl));
+        };
+        
+        tempImg.src = pageImageUrl;
+      }
+      
+      function generatePNG() {
+        // Load the full-resolution image - EXACT same as downloadAnnotatedPNG
+        const fullResImg = new Image();
+        fullResImg.crossOrigin = 'anonymous';
+        
+        fullResImg.onload = function() {
+          // Create canvas at full image resolution - EXACT same as downloadAnnotatedPNG
+          const downloadCanvas = document.createElement('canvas');
+          downloadCanvas.width = fullResImg.naturalWidth;
+          downloadCanvas.height = fullResImg.naturalHeight;
+          const ctx = downloadCanvas.getContext('2d');
+          
+          // Draw the full-resolution image
+          ctx.drawImage(fullResImg, 0, 0);
+          
+          // Calculate scale factor - EXACT same as downloadAnnotatedPNG
+          const scaleX = fullResImg.naturalWidth / displayedWidth;
+          const scaleY = fullResImg.naturalHeight / displayedHeight;
+          
+          // Redraw all annotations at full resolution - EXACT same function
+          if (annotations && annotations.length > 0) {
+            annotations.forEach(function(annotation) {
+              drawAnnotationAtFullRes(ctx, annotation, scaleX, scaleY);
+            });
+          }
+          
+          // Convert to data URL - EXACT same as downloadAnnotatedPNG
+          // Return both the data URL and the exact canvas dimensions
+          try {
+            const dataUrl = downloadCanvas.toDataURL('image/png');
+            if (dataUrl && dataUrl.startsWith('data:')) {
+              resolve({
+                dataUrl: dataUrl,
+                width: downloadCanvas.width,
+                height: downloadCanvas.height
+              });
+            } else {
+              reject(new Error('Failed to generate PNG data URL'));
+            }
+          } catch (err) {
+            reject(new Error('Failed to generate PNG: ' + err.message));
+          }
+        };
+        
+        fullResImg.onerror = function() {
+          reject(new Error('Failed to load full-resolution image: ' + pageImageUrl));
+        };
+        
+        fullResImg.src = pageImageUrl;
+      }
+    });
+  }
+
+  // Function to download entire document as PDF
+  async function downloadDocumentPDF(event) {
+    event.preventDefault();
+    
+    const btn = event.target;
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Generating PDF...';
+    
+    try {
+      // Fetch all pages for this document
+      const docResponse = await fetch(`${window.BASE_PATH || ''}/doc/{{ page.document_id }}`);
+      const docText = await docResponse.text();
+      
+      // Parse page IDs from the HTML
+      const pageIdRegex = /page\/(\d+)/g;
+      const pageIds = [];
+      let match;
+      while ((match = pageIdRegex.exec(docText)) !== null) {
+        pageIds.push(parseInt(match[1]));
+      }
+      
+      // Remove duplicates
+      const uniquePageIds = [...new Set(pageIds)];
+      
+      if (uniquePageIds.length === 0) {
+        throw new Error('No pages found for document');
+      }
+      
+      // Fetch all pages to get their indices and data
+      const pagesWithData = await Promise.all(
+        uniquePageIds.map(async (pageId) => {
+          try {
+            const response = await fetch(`${window.BASE_PATH || ''}/page/${pageId}.json`);
+            const data = await response.json();
+            return {
+              id: pageId,
+              page_index: data.page_index,
+              image_url: data.image_url,
+              annotations: data.annotations || []
+            };
+          } catch (e) {
+            console.error(`Error fetching page ${pageId}:`, e);
+            return null;
+          }
+        })
+      );
+      
+      // Filter out nulls and sort by page_index
+      const sortedPages = pagesWithData
+        .filter(p => p !== null)
+        .sort((a, b) => a.page_index - b.page_index);
+      
+      if (sortedPages.length === 0) {
+        throw new Error('No pages found for document');
+      }
+      
+      const { jsPDF } = window.jspdf;
+      let pdf = null;
+      const docFilename = '{{ doc.filename|replace(".pdf", "") }}';
+      
+      // Process each page
+      for (let i = 0; i < sortedPages.length; i++) {
+        const page = sortedPages[i];
+        btn.textContent = `Processing page ${i + 1} of ${sortedPages.length}...`;
+        
+        // Generate annotated PNG using EXACT same logic as single-page download
+        // Returns both data URL and exact dimensions
+        const pagePNG = await generateAnnotatedPNGForPage(page.image_url, page.annotations);
+        
+        // Use the exact canvas dimensions from PNG generation (1:1 ratio - no scaling, no margins)
+        // This ensures perfect alignment - these are the exact dimensions used when creating the PNG
+        const imgWidthPt = pagePNG.width;
+        const imgHeightPt = pagePNG.height;
+        
+        // Set PDF page size to match PNG exactly (no margins)
+        if (i === 0) {
+          pdf = new jsPDF({
+            orientation: imgWidthPt > imgHeightPt ? 'landscape' : 'portrait',
+            unit: 'pt',
+            format: [imgWidthPt, imgHeightPt],
+            compress: true
+          });
+          // Remove any default margins
+          pdf.setPage(1);
+        } else {
+          pdf.addPage([imgWidthPt, imgHeightPt], imgWidthPt > imgHeightPt ? 'landscape' : 'portrait');
+        }
+        
+        // Get current page and ensure no margins
+        const currentPage = pdf.internal.getCurrentPageInfo().pageNumber;
+        pdf.setPage(currentPage);
+        
+        // Add image to PDF at exact dimensions, starting at (0, 0) with no margins
+        // Use the exact pixel dimensions - 1 pixel = 1 point for perfect alignment
+        pdf.addImage(pagePNG.dataUrl, 'PNG', 0, 0, imgWidthPt, imgHeightPt, undefined, 'FAST');
+      }
+      
+      // Save the PDF
+      pdf.save(`${docFilename}_annotated.pdf`);
+      
+      btn.disabled = false;
+      btn.textContent = originalText;
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Error generating PDF: ' + error.message);
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  }
+
+</script>
+{% else %}
+<script>
+  // Download PNG function for teachers (no annotations, just the page image)
+  function downloadAnnotatedPNG(event) {
+    event.preventDefault();
+    
+    const img = document.getElementById('page-img');
+    if (!img) {
+      alert('Image not found');
+      return;
+    }
+    
+    // Create a canvas to capture the image
+    const downloadCanvas = document.createElement('canvas');
+    
+    // Load the full-resolution image
+    const fullResImg = new Image();
+    fullResImg.crossOrigin = 'anonymous';
+    
+    fullResImg.onload = function() {
+      // Set canvas to full image resolution
+      downloadCanvas.width = fullResImg.naturalWidth;
+      downloadCanvas.height = fullResImg.naturalHeight;
+      
+      const ctx = downloadCanvas.getContext('2d');
+      ctx.drawImage(fullResImg, 0, 0);
+      
+      // Convert to blob and download
+      downloadCanvas.toBlob(function(blob) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `{{ doc.filename|replace('.pdf', '') }}_page_{{ page.page_index + 1 }}.png`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 'image/png');
+    };
+    
+    fullResImg.onerror = function() {
+      // Fallback: capture at displayed resolution
+      downloadCanvas.width = img.clientWidth;
+      downloadCanvas.height = img.clientHeight;
+      
+      const ctx = downloadCanvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      
+      downloadCanvas.toBlob(function(blob) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `{{ doc.filename|replace('.pdf', '') }}_page_{{ page.page_index + 1 }}.png`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 'image/png');
+    };
+    
+    fullResImg.src = img.src;
   }
 </script>
 {% endif %}

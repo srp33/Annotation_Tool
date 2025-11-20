@@ -39,4 +39,6 @@ ENV PYTHONUNBUFFERED=1
 ENTRYPOINT ["docker-entrypoint.sh"]
 
 # Run with gunicorn for production
-CMD ["gunicorn", "--bind", "0.0.0.0:3389", "--workers", "8", "--timeout", "120", "app:app"]
+# Note: We handle SCRIPT_NAME in the Flask middleware, so we don't pass it to Gunicorn
+# This prevents Gunicorn from trying to strip the prefix and causing errors
+CMD ["gunicorn", "--bind", "0.0.0.0:3389", "--workers", "8", "--timeout", "120", "--access-logfile", "-", "--error-logfile", "-", "app:app"]
