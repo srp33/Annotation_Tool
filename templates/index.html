@@ -27,7 +27,7 @@
 <div id="upload-section" class="box">
   <form id="upload-form" action="{{ url_for('upload') }}" method="post" enctype="multipart/form-data">
     <div class="field">
-      <label class="label">Upload a PDF</label>
+      <label class="label">Upload a PDF:</label>
       <div class="file has-name is-fullwidth">
         <label class="file-label">
           <input class="file-input" type="file" name="pdf" accept="application/pdf" required>
@@ -40,7 +40,7 @@
       </div>
     </div>
     <div class="field">
-      <button class="button is-primary">Upload</button>
+      <button class="button is-primary is-outlined">Upload</button>
     </div>
   </form>
 </div>
@@ -49,22 +49,40 @@
 <div class="box">
   {% if docs %}
     {% if user.role == 'teacher' %}
-      <p class="mb-3">Available documents:</p>
       <div>
         {% for doc in docs %}
           <div class="level mb-2">
             <div class="level-left">
               <div class="level-item">
-                <a href="{{ url_for('document_first_page', doc_id=doc.id) }}" class="button is-light">
-                  {{ doc.filename }}
+                <a href="{{ url_for('document_first_page', doc_id=doc.id) }}" class="button is-dark">
+                  <span class="icon">
+                    <i class="fas fa-file-pdf"></i>
+                  </span>
+                  <span>{{ doc.filename }}</span>
                 </a>
               </div>
             </div>
             <div class="level-right">
               <div class="level-item">
+                <a href="{{ url_for('view_plot', doc_id=doc.id) }}" class="button is-success is-outlined mr-2" title="View emotions plot">
+                  <span class="icon">
+                    <i class="fas fa-chart-line"></i>
+                  </span>
+                  <span>View Plot</span>
+                </a>
+              </div>
+              <div class="level-item">
+                <a href="{{ url_for('download_emotions', doc_id=doc.id) }}" class="button is-info is-outlined mr-2" title="Download emotions Excel file">
+                  <span class="icon">
+                    <i class="fas fa-download"></i>
+                  </span>
+                  <span>Download Data</span>
+                </a>
+              </div>
+              <div class="level-item">
                 <form method="POST" action="{{ url_for('delete_document', doc_id=doc.id) }}" style="display: inline;" 
                       onsubmit="return confirm('Are you sure you want to delete \'{{ doc.filename }}\'? This will delete the document and all annotations. This cannot be undone.');">
-                  <button type="submit" class="button is-danger is-light" title="Delete document">
+                  <button type="submit" class="button is-danger is-outlined" title="Delete document">
                     <span class="icon">
                       <i class="fas fa-trash"></i>
                     </span>
@@ -77,14 +95,16 @@
         {% endfor %}
       </div>
     {% else %}
-      <p class="mb-3">Available documents:</p>
       <div>
         {% for doc in docs %}
           <div class="level mb-2">
             <div class="level-left">
               <div class="level-item">
-                <a href="{{ url_for('document_first_page', doc_id=doc.id) }}" class="button is-light">
-                  {{ doc.filename }}
+                <a href="{{ url_for('document_first_page', doc_id=doc.id) }}" class="button is-dark">
+                  <span class="icon">
+                    <i class="fas fa-file-pdf"></i>
+                  </span>
+                  <span>{{ doc.filename }}</span>
                 </a>
               </div>
             </div>
@@ -433,10 +453,9 @@
     const boxes = document.querySelectorAll('.box');
     let docsContainer = null;
     
-    // Strategy 1: Find box that contains "Available documents:" text
+    // Strategy 1: Find box that contains document links
     for (let box of boxes) {
-      const text = box.textContent || '';
-      if (text.includes('Available documents')) {
+      if (box.querySelector('a.button.is-primary[href*="/doc/"]')) {
         docsContainer = box;
         break;
       }
@@ -494,37 +513,21 @@
       docsContainer.innerHTML = '';
     }
     
-    // Find or create the label
-    let label = docsContainer.querySelector('p.mb-3');
-    if (!label || !label.textContent.includes('Available documents')) {
-      label = document.createElement('p');
-      label.className = 'mb-3';
-      label.textContent = 'Available documents:';
-      docsContainer.appendChild(label);
-    }
-    
-    // Find the div that contains the document list (comes after the label)
+    // Find the div that contains the document list
     let listContainer = null;
     const children = Array.from(docsContainer.children);
+    // Look for a div that contains document links
     for (let i = 0; i < children.length; i++) {
-      if (children[i] === label) {
-        // The next div should be the list container
-        if (i + 1 < children.length && children[i + 1].tagName === 'DIV') {
-          listContainer = children[i + 1];
-          break;
-        }
+      if (children[i].tagName === 'DIV' && children[i].querySelector('a.button.is-primary[href*="/doc/"]')) {
+        listContainer = children[i];
+        break;
       }
     }
     
     // If no list container found, create it
     if (!listContainer) {
       listContainer = document.createElement('div');
-      // Insert after the label
-      if (label.nextSibling) {
-        docsContainer.insertBefore(listContainer, label.nextSibling);
-      } else {
-        docsContainer.appendChild(listContainer);
-      }
+      docsContainer.appendChild(listContainer);
     }
     
     // Create a new level div for the document (matching the template structure)
@@ -537,19 +540,61 @@
     levelItem.className = 'level-item';
     
     const docLink = document.createElement('a');
-    docLink.className = 'button is-light';
+    docLink.className = 'button is-dark';
     docLink.href = (window.BASE_PATH || '') + '/doc/' + docId + '/first';
-    docLink.textContent = filename;
+    
+    const iconSpan = document.createElement('span');
+    iconSpan.className = 'icon';
+    iconSpan.innerHTML = '<i class="fas fa-file-pdf"></i>';
+    docLink.appendChild(iconSpan);
+    
+    const textSpan = document.createElement('span');
+    textSpan.textContent = filename;
+    docLink.appendChild(textSpan);
     
     levelItem.appendChild(docLink);
     levelLeft.appendChild(levelItem);
     
     const levelRight = document.createElement('div');
     levelRight.className = 'level-right';
-    const levelItemRight = document.createElement('div');
-    levelItemRight.className = 'level-item';
+    
+    // Create view plot button
+    const levelItemPlot = document.createElement('div');
+    levelItemPlot.className = 'level-item';
+    const plotLink = document.createElement('a');
+    plotLink.className = 'button is-success is-outlined mr-2';
+    plotLink.href = (window.BASE_PATH || '') + '/documents/' + docId + '/view-plot';
+    plotLink.title = 'View emotions plot';
+    const plotIconSpan = document.createElement('span');
+    plotIconSpan.className = 'icon';
+    plotIconSpan.innerHTML = '<i class="fas fa-chart-line"></i>';
+    plotLink.appendChild(plotIconSpan);
+    const plotTextSpan = document.createElement('span');
+    plotTextSpan.textContent = 'View Plot';
+    plotLink.appendChild(plotTextSpan);
+    levelItemPlot.appendChild(plotLink);
+    levelRight.appendChild(levelItemPlot);
+    
+    // Create download button
+    const levelItemDownload = document.createElement('div');
+    levelItemDownload.className = 'level-item';
+    const downloadLink = document.createElement('a');
+    downloadLink.className = 'button is-info is-outlined mr-2';
+    downloadLink.href = (window.BASE_PATH || '') + '/documents/' + docId + '/download-emotions';
+    downloadLink.title = 'Download emotions Excel file';
+    const downloadIconSpan = document.createElement('span');
+    downloadIconSpan.className = 'icon';
+    downloadIconSpan.innerHTML = '<i class="fas fa-download"></i>';
+    downloadLink.appendChild(downloadIconSpan);
+    const downloadTextSpan = document.createElement('span');
+    downloadTextSpan.textContent = 'Download Data';
+    downloadLink.appendChild(downloadTextSpan);
+    levelItemDownload.appendChild(downloadLink);
+    levelRight.appendChild(levelItemDownload);
     
     // Create delete form
+    const levelItemRight = document.createElement('div');
+    levelItemRight.className = 'level-item';
     const deleteForm = document.createElement('form');
     deleteForm.method = 'POST';
     deleteForm.action = (window.BASE_PATH || '') + '/doc/' + docId + '/delete';
@@ -560,17 +605,17 @@
     
     const deleteButton = document.createElement('button');
     deleteButton.type = 'submit';
-    deleteButton.className = 'button is-danger is-light';
+    deleteButton.className = 'button is-danger is-outlined';
     deleteButton.title = 'Delete document';
     
-    const iconSpan = document.createElement('span');
-    iconSpan.className = 'icon';
-    iconSpan.innerHTML = '<i class="fas fa-trash"></i>';
-    deleteButton.appendChild(iconSpan);
+    const deleteIconSpan = document.createElement('span');
+    deleteIconSpan.className = 'icon';
+    deleteIconSpan.innerHTML = '<i class="fas fa-trash"></i>';
+    deleteButton.appendChild(deleteIconSpan);
     
-    const textSpan = document.createElement('span');
-    textSpan.textContent = 'Delete';
-    deleteButton.appendChild(textSpan);
+    const deleteTextSpan = document.createElement('span');
+    deleteTextSpan.textContent = 'Delete';
+    deleteButton.appendChild(deleteTextSpan);
     
     deleteForm.appendChild(deleteButton);
     levelItemRight.appendChild(deleteForm);

@@ -484,7 +484,7 @@ def index():
                     SELECT id, filename, uploaded_at 
                     FROM documents 
                     WHERE uploaded_by = :user_id OR uploaded_by IS NULL
-                    ORDER BY uploaded_at DESC
+                    ORDER BY filename ASC
                 """),
                 {"user_id": user['id']}
             ).all()
@@ -494,7 +494,7 @@ def index():
                 text("""
                     SELECT d.id, d.filename, d.uploaded_at
                     FROM documents d
-                    ORDER BY d.uploaded_at DESC
+                    ORDER BY d.filename ASC
                 """)
             ).all()
     
@@ -647,8 +647,32 @@ def document(doc_id):
             
             # Convert doc to dict for template
             doc_dict = {"id": doc.id, "filename": doc.filename}
+            
+            # Get all documents for dropdown
+            if user['role'] == 'teacher':
+                all_docs = conn.execute(
+                    text("SELECT id, filename FROM documents WHERE uploaded_by = :user_id OR uploaded_by IS NULL ORDER BY filename ASC"),
+                    {"user_id": user['id']}
+                ).all()
+            else:
+                all_docs = conn.execute(
+                    text("SELECT id, filename FROM documents ORDER BY filename ASC")
+                ).all()
+            
+            all_documents = [{"id": d.id, "filename": d.filename} for d in all_docs]
         
-        return render_template("document.html", doc=doc_dict, pages=pages_list, user=user)
+        # Prepare document URLs for dropdown
+        document_urls = {}
+        for d in all_documents:
+            document_urls[d['id']] = url_for('document', doc_id=d['id'])
+        
+        return render_template("document.html", 
+                             doc=doc_dict, 
+                             pages=pages_list, 
+                             user=user,
+                             all_documents=all_documents,
+                             current_doc_id=doc_id,
+                             document_urls=document_urls)
     except Exception as e:
         import traceback
         error_msg = f"Error in document route: {str(e)}\n{traceback.format_exc()}"
@@ -846,6 +870,30 @@ def page(page_id):
         
         # Generate image URL with prefix support
         image_url = url_with_prefix('serve_image', rel=page_data.image_path)
+        
+        # Get all documents for dropdown
+        if user['role'] == 'teacher':
+            all_docs = conn.execute(
+                text("SELECT id, filename FROM documents WHERE uploaded_by = :user_id OR uploaded_by IS NULL ORDER BY filename ASC"),
+                {"user_id": user['id']}
+            ).all()
+        else:
+            all_docs = conn.execute(
+                text("SELECT id, filename FROM documents ORDER BY filename ASC")
+            ).all()
+        
+        all_documents = [{"id": d.id, "filename": d.filename} for d in all_docs]
+        
+        # Prepare document URLs for dropdown - link to first page of document
+        document_urls = {}
+        for d in all_documents:
+            document_urls[d['id']] = url_for('document_first_page', doc_id=d['id'])
+        
+        # Prepare all pages for dropdown
+        all_pages_list = [{"id": p.id, "page_index": p.page_index} for p in all_pages]
+        page_urls = {}
+        for p in all_pages:
+            page_urls[p.id] = url_for('page', page_id=p.id)
     
     return render_template("page.html", 
                          page={"id": page_data.id, 
@@ -860,7 +908,13 @@ def page(page_id):
                          prev_page_id=prev_page_id,
                          next_page_id=next_page_id,
                          total_pages=total_pages,
-                         user=user)
+                         user=user,
+                         all_documents=all_documents,
+                         current_doc_id=page_data.document_id,
+                         document_urls=document_urls,
+                         all_pages=all_pages_list,
+                         current_page_id=page_id,
+                         page_urls=page_urls)
 
 @app.route("/page/<int:page_id>/annotate", methods=["POST"])
 @login_required
@@ -1580,6 +1634,282 @@ def assign_document(doc_id):
         assigned_ids = {row.student_id for row in assigned_students}
     
     return render_template("assign_document.html", doc=doc, students=students, assigned_ids=assigned_ids, current_user=user)
+
+@app.route("/documents/<doc_id>/download-emotions", methods=["GET"])
+@teacher_required
+def download_emotions(doc_id):
+    """Download Excel file with emotions data for all students"""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+    
+    # Mapping from emoji to emotion name
+    emoji_to_emotion = {
+        "🤩": "Excited",
+        "🙂": "Okay",
+        "😕": "Confused",
+        "😤": "Frustrated",
+        "😢": "Overwhelmed",
+        "😴": "Bored",
+        "😡": "Triggered",
+        "😲": "Surprised"
+    }
+    
+    user = get_current_user()
+    
+    with engine.begin() as conn:
+        # Verify document belongs to this teacher
+        doc = conn.execute(
+            text("SELECT id, filename FROM documents WHERE id=:id AND (uploaded_by=:user_id OR uploaded_by IS NULL)"),
+            {"id": doc_id, "user_id": user['id']}
+        ).first()
+        
+        if not doc:
+            abort(404)
+        
+        # Get all reactions for all pages in this document
+        # Join with pages to get page_index, and with users to get student ID
+        reactions = conn.execute(
+            text("""
+                SELECT 
+                    u.id as student_id,
+                    p.page_index,
+                    r.emoji
+                FROM reactions r
+                JOIN pages p ON r.page_id = p.id
+                JOIN users u ON r.user_id = u.id
+                WHERE p.document_id = :doc_id
+                ORDER BY u.id, p.page_index
+            """),
+            {"doc_id": doc_id}
+        ).fetchall()
+    
+    # Create Excel workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Emotions"
+    
+    # Add headers
+    headers = ["Student ID", "Page Number", "Emotion"]
+    for col_idx, header in enumerate(headers, start=1):
+        cell = ws.cell(row=1, column=col_idx, value=header)
+        cell.font = Font(bold=True)
+    
+    # Add data rows
+    for row_idx, reaction in enumerate(reactions, start=2):
+        ws.cell(row=row_idx, column=1, value=reaction.student_id)
+        # page_index is 0-based, so add 1 for display
+        ws.cell(row=row_idx, column=2, value=reaction.page_index + 1)
+        # Convert emoji to emotion name, fallback to emoji if not found
+        emotion_name = emoji_to_emotion.get(reaction.emoji, reaction.emoji)
+        ws.cell(row=row_idx, column=3, value=emotion_name)
+    
+    # Generate Excel file in memory
+    excel_buffer = io.BytesIO()
+    wb.save(excel_buffer)
+    excel_buffer.seek(0)
+    
+    # Generate filename
+    base_filename = Path(doc.filename).stem if doc.filename else "document"
+    excel_filename = f"{base_filename}_emotions.xlsx"
+    
+    # Return Excel file as download
+    return Response(
+        excel_buffer.getvalue(),
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={
+            'Content-Disposition': f'attachment; filename="{excel_filename}"'
+        }
+    )
+
+@app.route("/documents/<doc_id>/view-plot", methods=["GET"])
+@teacher_required
+def view_plot(doc_id):
+    """Display dot plot visualization of emotions by page"""
+    # Mapping from emoji to emotion name (same order as in the app)
+    emoji_to_emotion = {
+        "🤩": "Excited",
+        "🙂": "Okay",
+        "😕": "Confused",
+        "😤": "Frustrated",
+        "😢": "Overwhelmed",
+        "😴": "Bored",
+        "😡": "Triggered",
+        "😲": "Surprised"
+    }
+    
+    # Emotion order for y-axis (same as in the app)
+    emotion_order = ["Excited", "Okay", "Confused", "Frustrated", "Overwhelmed", "Bored", "Triggered", "Surprised"]
+    
+    user = get_current_user()
+    
+    with engine.begin() as conn:
+        # Verify document belongs to this teacher
+        doc = conn.execute(
+            text("SELECT id, filename FROM documents WHERE id=:id AND (uploaded_by=:user_id OR uploaded_by IS NULL)"),
+            {"id": doc_id, "user_id": user['id']}
+        ).first()
+        
+        if not doc:
+            abort(404)
+        
+        # Get all pages for this document
+        pages = conn.execute(
+            text("SELECT id, page_index FROM pages WHERE document_id=:doc_id ORDER BY page_index ASC"),
+            {"doc_id": doc_id}
+        ).fetchall()
+        
+        if not pages:
+            abort(404)
+        
+        # Get all reactions for all pages in this document
+        reactions = conn.execute(
+            text("""
+                SELECT 
+                    p.page_index,
+                    r.emoji,
+                    COUNT(DISTINCT r.user_id) as emotion_count
+                FROM reactions r
+                JOIN pages p ON r.page_id = p.id
+                WHERE p.document_id = :doc_id
+                GROUP BY p.page_index, r.emoji
+            """),
+            {"doc_id": doc_id}
+        ).fetchall()
+        
+        # Get total responses per page (students who responded with any emotion)
+        page_totals = conn.execute(
+            text("""
+                SELECT 
+                    p.page_index,
+                    COUNT(DISTINCT r.user_id) as total_responses
+                FROM reactions r
+                JOIN pages p ON r.page_id = p.id
+                WHERE p.document_id = :doc_id
+                GROUP BY p.page_index
+            """),
+            {"doc_id": doc_id}
+        ).fetchall()
+        
+        # Get all documents for dropdown
+        if user['role'] == 'teacher':
+            all_docs = conn.execute(
+                text("SELECT id, filename FROM documents WHERE uploaded_by = :user_id OR uploaded_by IS NULL ORDER BY filename ASC"),
+                {"user_id": user['id']}
+            ).all()
+        else:
+            all_docs = conn.execute(
+                text("SELECT id, filename FROM documents ORDER BY filename ASC")
+            ).all()
+        
+        all_documents = [{"id": d.id, "filename": d.filename} for d in all_docs]
+    
+    # Create a dictionary for page totals
+    page_total_dict = {row.page_index: row.total_responses for row in page_totals}
+    
+    # Build data structure for the plot
+    # Structure: {emotion_name: {page_index: {'count': count, 'frequency': frequency}}}
+    plot_data = {emotion: {} for emotion in emotion_order}
+    
+    for reaction in reactions:
+        emotion_name = emoji_to_emotion.get(reaction.emoji, reaction.emoji)
+        page_index = reaction.page_index
+        emotion_count = reaction.emotion_count
+        total_responses = page_total_dict.get(page_index, 0)
+        
+        if total_responses > 0 and emotion_name in plot_data:
+            frequency = emotion_count / total_responses
+            plot_data[emotion_name][page_index] = {
+                'count': emotion_count,
+                'frequency': frequency
+            }
+    
+    # Prepare data for Plotly
+    # We'll create one trace per emotion (always all 8, even if no data)
+    traces = []
+    page_numbers = sorted(set(page.page_index for page in pages))
+    
+    # Find the maximum count across all emotions and pages for proper scaling
+    max_count = 0
+    for emotion in emotion_order:
+        for page_index in page_numbers:
+            if page_index in plot_data[emotion]:
+                count = plot_data[emotion][page_index]['count']
+                max_count = max(max_count, count)
+    
+    # If no data, set a default max_count
+    if max_count == 0:
+        max_count = 1
+    
+    # Create a trace for each emotion, even if it has no data
+    # For emotions with no data, add an invisible dummy point so they appear on y-axis
+    for emotion in emotion_order:
+        x_values = []
+        y_values = []
+        sizes = []
+        texts = []
+        
+        for page_index in page_numbers:
+            if page_index in plot_data[emotion]:
+                data = plot_data[emotion][page_index]
+                frequency = data['frequency']
+                emotion_count = data['count']
+                total = page_total_dict.get(page_index, 0)
+                
+                x_values.append(page_index + 1)  # Convert to 1-based page number
+                y_values.append(emotion)
+                # Size proportional to count (number of individuals)
+                # Scale to a reasonable range (10-50 pixels) based on max_count
+                size_value = 10 + (emotion_count / max_count) * 40 if max_count > 0 else 10
+                sizes.append(size_value)
+                texts.append(f"{emotion_count}/{total}<br>Frequency: {frequency:.2%}")
+        
+        # If no data for this emotion, add an invisible dummy point so it appears on y-axis
+        has_data = len(x_values) > 0
+        if not has_data and page_numbers:
+            # Add invisible point at first page
+            first_page = page_numbers[0] + 1
+            x_values.append(first_page)
+            y_values.append(emotion)
+            sizes.append(1)  # Small size
+            texts.append('')  # No hover text
+        
+        # Always add trace (to show all emotions on y-axis)
+        marker_config = {
+            'size': sizes,
+            'sizemode': 'diameter',
+            'sizemin': 5 if has_data else 0,
+            'line': {'width': 1, 'color': 'rgba(0, 0, 0, 0.5)'}
+        }
+        
+        # Make dummy points invisible
+        if not has_data:
+            marker_config['opacity'] = 0
+        
+        traces.append({
+            'x': x_values,
+            'y': y_values,
+            'mode': 'markers',
+            'type': 'scatter',
+            'name': emotion,
+            'marker': marker_config,
+            'text': texts,
+            'hovertemplate': '<b>%{y}</b><br>Page %{x}<br>%{text}<extra></extra>',
+            'showlegend': False
+        })
+    
+    # Prepare document URLs for dropdown
+    document_urls = {}
+    for d in all_documents:
+        document_urls[d['id']] = url_for('view_plot', doc_id=d['id'])
+    
+    return render_template("view_plot.html", 
+                         doc=doc, 
+                         traces=traces,
+                         page_numbers=page_numbers,
+                         current_user=user,
+                         all_documents=all_documents,
+                         current_doc_id=doc_id,
+                         document_urls=document_urls)
 
 @app.route("/documents/<doc_id>/delete", methods=["POST"])
 @teacher_required

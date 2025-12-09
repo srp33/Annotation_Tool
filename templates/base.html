@@ -188,7 +188,34 @@
               </a>
               {% block navigation_buttons %}{% endblock %}
               {% block document_name %}
-              {% if document_name is defined and document_name %}
+              {% if document_name is defined and document_name and all_documents is defined and all_documents and current_doc_id is defined and current_doc_id and document_urls is defined %}
+              <span class="has-text-grey" style="font-size: 0.875rem; font-weight: 500;">|</span>
+              <div class="dropdown" style="display: inline-block;">
+                <div class="dropdown-trigger">
+                  <button class="button is-light is-small" aria-haspopup="true" aria-controls="document-dropdown-menu" aria-expanded="false" style="text-decoration: none;" onclick="event.stopPropagation(); this.closest('.dropdown').classList.toggle('is-active');">
+                    <span class="has-text-dark" style="font-size: 0.875rem; font-weight: 500;">{{ document_name }}</span>
+                    <span class="icon is-small">
+                      <i class="fas fa-angle-down" aria-hidden="true"></i>
+                    </span>
+                  </button>
+                </div>
+                <div class="dropdown-menu" id="document-dropdown-menu" role="menu">
+                  <div class="dropdown-content">
+                    {% for doc in all_documents %}
+                    {% if doc.id == current_doc_id %}
+                    <span class="dropdown-item is-active" style="cursor: default; background-color: #3273dc; color: #fff; font-weight: 600;">
+                      {{ doc.filename }}
+                    </span>
+                    {% else %}
+                    <a href="{{ document_urls[doc.id] }}" class="dropdown-item">
+                      {{ doc.filename }}
+                    </a>
+                    {% endif %}
+                    {% endfor %}
+                  </div>
+                </div>
+              </div>
+              {% elif document_name is defined and document_name %}
               <span class="has-text-grey" style="font-size: 0.875rem; font-weight: 500;">|</span>
               <span class="has-text-dark" style="font-size: 0.875rem; font-weight: 500;">{{ document_name }}</span>
               {% endif %}
@@ -217,5 +244,23 @@
       {% block content %}{% endblock %}
     </div>
   </section>
+  <script>
+    // Close dropdowns when clicking outside
+    document.addEventListener('click', function(event) {
+      const dropdowns = document.querySelectorAll('.dropdown.is-active');
+      dropdowns.forEach(function(dropdown) {
+        if (!dropdown.contains(event.target)) {
+          dropdown.classList.remove('is-active');
+        }
+      });
+    });
+    
+    // Prevent dropdown from closing when clicking inside dropdown menu
+    document.addEventListener('click', function(event) {
+      if (event.target.closest('.dropdown-menu')) {
+        event.stopPropagation();
+      }
+    });
+  </script>
 </body>
 </html>

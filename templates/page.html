@@ -6,9 +6,42 @@
 {% endif %}
 {% endblock %}
 {% block navigation_buttons %}
-{% if page and page.document_id %}
+{% if page and page.document_id and all_pages is defined and all_pages and current_page_id is defined and page_urls is defined %}
 <div style="display: flex; align-items: center; gap: 0.5rem; margin-left: 0.5rem;">
-  <a class="button is-light is-small" href="{{ url_for('document', doc_id=page.document_id) }}">Pages</a>
+  <div class="dropdown" style="display: inline-block;">
+    <div class="dropdown-trigger">
+      <button class="button is-light is-small" aria-haspopup="true" aria-controls="pages-dropdown-menu" aria-expanded="false" style="text-decoration: none;" onclick="event.stopPropagation(); this.closest('.dropdown').classList.toggle('is-active');">
+        <span>Pages</span>
+        <span class="icon is-small">
+          <i class="fas fa-angle-down" aria-hidden="true"></i>
+        </span>
+      </button>
+    </div>
+    <div class="dropdown-menu" id="pages-dropdown-menu" role="menu">
+      <div class="dropdown-content">
+        {% for p in all_pages %}
+        {% if p.id == current_page_id %}
+        <span class="dropdown-item is-active" style="cursor: default; background-color: #3273dc; color: #fff; font-weight: 600;">
+          Page {{ p.page_index + 1 }}
+        </span>
+        {% else %}
+        <a href="{{ page_urls[p.id] }}" class="dropdown-item">
+          Page {{ p.page_index + 1 }}
+        </a>
+        {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% if prev_page_id %}
+  <a class="button is-light is-small" href="{{ url_for('page', page_id=prev_page_id) }}">← Previous</a>
+  {% endif %}
+  {% if next_page_id %}
+  <a class="button is-light is-small" href="{{ url_for('page', page_id=next_page_id) }}">Next →</a>
+  {% endif %}
+</div>
+{% elif page and page.document_id %}
+<div style="display: flex; align-items: center; gap: 0.5rem; margin-left: 0.5rem;">
   {% if prev_page_id %}
   <a class="button is-light is-small" href="{{ url_for('page', page_id=prev_page_id) }}">← Previous</a>
   {% endif %}

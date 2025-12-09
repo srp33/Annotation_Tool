@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% set document_name = doc.filename if doc and doc.filename else None %}
+{% block content %}
+
+<div class="box">
+  <div class="content mb-4">
+    <p class="has-text-grey">
+      This plot shows the frequency of each emotion response by page. 
+      The size of each dot represents the number of students who selected that emotion on that page.
+      Hover over a dot to see the exact count and frequency.
+    </p>
+  </div>
+  
+  <div id="plot-container" style="width: 100%; min-height: 800px;"></div>
+</div>
+
+<!-- Plotly.js CDN -->
+<script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
+
+<script>
+  // Prepare data for Plotly
+  const traces = {{ traces | tojson }};
+  const pageNumbers = {{ page_numbers | tojson }};
+  
+  // Define emotion order (same as in the app - top to bottom as shown on student page)
+  // Plotly displays categories from bottom to top, so we reverse to match the student page order
+  const emotionOrder = ['Surprised', 'Triggered', 'Bored', 'Overwhelmed', 'Frustrated', 'Confused', 'Okay', 'Excited'];
+  
+  // Color palette for different emotions
+  const colors = [
+    '#FFD700', // Excited - Gold
+    '#90EE90', // Okay - Light Green
+    '#87CEEB', // Confused - Sky Blue
+    '#FFA500', // Frustrated - Orange
+    '#9370DB', // Overwhelmed - Medium Purple
+    '#D3D3D3', // Bored - Light Gray
+    '#FF6347', // Triggered - Tomato
+    '#FF69B4'  // Surprised - Hot Pink
+  ];
+  
+  // Assign colors to traces
+  traces.forEach((trace, index) => {
+    const emotionIndex = emotionOrder.indexOf(trace.name);
+    if (emotionIndex >= 0 && emotionIndex < colors.length) {
+      trace.marker.color = colors[emotionIndex];
+    }
+  });
+  
+  // Calculate x-axis range based on all pages (convert 0-based to 1-based)
+  const pageNumbers1Based = pageNumbers.map(p => p + 1);
+  const minPage = pageNumbers1Based.length > 0 ? Math.max(1, Math.min(...pageNumbers1Based)) : 1;
+  const maxPage = pageNumbers1Based.length > 0 ? Math.max(...pageNumbers1Based) : 1;
+  
+  const layout = {
+    title: {
+      text: 'Emotion Frequency by Page',
+      font: { size: 20, color: '#333' }
+    },
+    xaxis: {
+      title: {
+        text: 'Page Number',
+        font: { size: 14 }
+      },
+      type: 'linear',
+      tickmode: 'linear',
+      tick0: 1,
+      dtick: 1,
+      showgrid: true,
+      gridcolor: '#e0e0e0',
+      range: [Math.max(0.5, minPage - 0.5), maxPage + 0.5],  // Add padding but don't show pages < 1
+      constrain: 'domain',  // Constrain to valid range
+      fixedrange: true  // Disable zooming
+    },
+    yaxis: {
+      type: 'category',
+      categoryorder: 'array',
+      categoryarray: emotionOrder,
+      showgrid: true,
+      gridcolor: '#e0e0e0',
+      automargin: true,  // Automatically adjust margins to show all categories
+      fixedrange: true,  // Disable zooming
+      showticklabels: true,
+      title: '',  // Remove y-axis label
+      // Force all categories to be shown by setting the range explicitly
+      range: emotionOrder.slice().reverse()  // Reverse because Plotly shows first at bottom
+    },
+    hovermode: 'closest',
+    showlegend: false,
+    margin: { l: 120, r: 50, t: 100, b: 60 },
+    height: Math.max(800, emotionOrder.length * 100),  // Dynamic height with more space per emotion
+    plot_bgcolor: 'white',
+    paper_bgcolor: 'white',
+    autosize: true
+  };
+  
+  const config = {
+    responsive: true,
+    displayModeBar: true,
+    modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d', 'zoom2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'resetScale2d'],
+    displaylogo: false
+  };
+  
+  // Create the plot only if we have data
+  if (traces && traces.length > 0 && pageNumbers && pageNumbers.length > 0) {
+    Plotly.newPlot('plot-container', traces, layout, config).catch(function(err) {
+      console.error('Error creating plot:', err);
+      document.getElementById('plot-container').innerHTML = '<p class="has-text-danger">Error loading plot. Please try again.</p>';
+    });
+  } else {
+    document.getElementById('plot-container').innerHTML = '<p class="has-text-grey">No emotion data available for this document.</p>';
+  }
+</script>
+
+{% endblock %}
