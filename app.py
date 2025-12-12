@@ -1001,6 +1001,80 @@ def delete_annotation(ann_id):
             
     return jsonify({"status": "success"})
 
+@app.route("/annotations/<int:ann_id>", methods=["PUT"])
+@login_required
+def update_annotation(ann_id):
+    """Update annotation coordinates (for dragging)"""
+    user = get_current_user()
+    data = request.get_json()
+    
+    with engine.begin() as conn:
+        # Only allow users to update their own annotations
+        # Check if annotation exists and belongs to user
+        existing = conn.execute(
+            text("SELECT id, kind, x, y, w, h, text, color FROM annotations WHERE id = :ann_id AND user_id = :user_id"),
+            {"ann_id": ann_id, "user_id": user['id']}
+        ).first()
+        
+        if not existing:
+            return jsonify({"error": "Annotation not found or you don't have permission to update it"}), 404
+        
+        # Update coordinates
+        # For freehand annotations, we also need to update the path points in the text field
+        # Check if it's a freehand annotation (either from data or existing annotation)
+        is_freehand = data.get("kind") == "freehand" or existing.kind == "freehand"
+        if is_freehand and "text" in data:
+            # Update freehand path points
+            conn.execute(
+                text("""
+                    UPDATE annotations 
+                    SET x = :x, y = :y, w = :w, h = :h, text = :text
+                    WHERE id = :ann_id AND user_id = :user_id
+                """),
+                {
+                    "ann_id": ann_id,
+                    "user_id": user['id'],
+                    "x": data.get("x"),
+                    "y": data.get("y"),
+                    "w": data.get("w"),
+                    "h": data.get("h"),
+                    "text": data.get("text")  # Updated path JSON
+                }
+            )
+        else:
+            # Update regular annotations (rect, text, line)
+            conn.execute(
+                text("""
+                    UPDATE annotations 
+                    SET x = :x, y = :y
+                    WHERE id = :ann_id AND user_id = :user_id
+                """),
+                {
+                    "ann_id": ann_id,
+                    "user_id": user['id'],
+                    "x": data.get("x"),
+                    "y": data.get("y")
+                }
+            )
+        
+        # Fetch updated annotation
+        updated = conn.execute(
+            text("SELECT id, kind, x, y, w, h, text, color FROM annotations WHERE id = :ann_id"),
+            {"ann_id": ann_id}
+        ).first()
+        
+    return jsonify({
+        "id": updated.id,
+        "kind": updated.kind,
+        "x": updated.x,
+        "y": updated.y,
+        "w": updated.w,
+        "h": updated.h,
+        "text": updated.text,
+        "color": updated.color,
+        "status": "success"
+    })
+
 def generate_annotated_png(page_id, user, canvas_width=None, canvas_height=None):
     """
     Helper function to generate an annotated PNG for a given page.

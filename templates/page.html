@@ -104,6 +104,7 @@
           <button class="button is-dark is-outlined" id="tool-rect">Rectangle</button>
           <button class="button is-dark is-outlined" id="tool-line">Line</button>
           <button class="button is-dark is-outlined" id="tool-text">Text</button>
+          <button class="button is-dark is-outlined" id="tool-move">Move</button>
           <button class="button is-dark is-outlined" id="tool-delete">Delete</button>
           <button class="button is-dark is-outlined" id="download-png-btn" href="#" onclick="downloadAnnotatedPNG(event); return false;" style="display: none;">
             <span>Download PNG</span>
@@ -380,6 +381,7 @@
   const toolTextBtn = document.getElementById('tool-text');
   const toolLineBtn = document.getElementById('tool-line');
   const toolFreehandBtn = document.getElementById('tool-freehand');
+  const toolMoveBtn = document.getElementById('tool-move');
   const deleteBtn   = document.getElementById('tool-delete');
   const colorInput = document.getElementById('color-input');
   const colorPickerBtn = document.getElementById('color-picker-btn');
@@ -396,6 +398,15 @@
   let startX = 0, startY = 0;
   let freehandPath = [];
   let pendingTextPosition = null; // Store x, y when text tool is clicked
+  
+  // Drag state variables
+  let dragging = false;
+  let draggedAnnotation = null;
+  let dragOffsetX = 0;
+  let dragOffsetY = 0;
+  let originalAnnotationX = 0;
+  let originalAnnotationY = 0;
+  let originalFreehandPath = null; // Store original path for freehand annotations
   
   // Color picker setup
   const colorButtons = document.querySelectorAll('.color-btn');
@@ -457,13 +468,18 @@
   });
 
   function setActiveTool(selectedTool) {
+    // Prevent selecting Move tool if there are no annotations
+    if (selectedTool === 'move' && (!existing || existing.length === 0)) {
+      selectedTool = 'freehand'; // Fallback to freehand
+    }
+    
     tool = selectedTool;
     // Save the selected tool to sessionStorage so it persists across page navigation
     if (typeof(Storage) !== "undefined") {
       sessionStorage.setItem('selectedTool', selectedTool);
     }
     // Remove active class and add outlined class to all buttons, reset their styles
-    [toolRectBtn, toolTextBtn, toolLineBtn, toolFreehandBtn, deleteBtn].forEach(btn => {
+    [toolRectBtn, toolTextBtn, toolLineBtn, toolFreehandBtn, toolMoveBtn, deleteBtn].forEach(btn => {
       if (btn) {
         btn.classList.remove('is-active');
         btn.classList.add('is-outlined');
@@ -491,6 +507,9 @@
     } else if (tool === 'freehand') {
       activeBtn = toolFreehandBtn;
       canvas.style.cursor = 'crosshair';
+    } else if (tool === 'move') {
+      activeBtn = toolMoveBtn;
+      canvas.style.cursor = 'move';
     } else if (tool === 'delete') {
       activeBtn = deleteBtn;
       canvas.style.cursor = 'pointer';
@@ -499,9 +518,9 @@
     if (activeBtn) {
       activeBtn.classList.add('is-active');
       activeBtn.classList.remove('is-outlined');
-      // Set background color - use selected color for all buttons except Delete
-      if (tool === 'delete') {
-        // Delete button stays black
+      // Set background color - use selected color for all buttons except Delete and Move
+      if (tool === 'delete' || tool === 'move') {
+        // Delete and Move buttons stay black
         activeBtn.style.backgroundColor = '#000000';
         activeBtn.style.color = '#FFFFFF';
       } else {
@@ -522,13 +541,13 @@
   // Function to update the active button's color when color changes
   function updateActiveToolColor() {
     const selectedColor = colorInput.value;
-    const activeBtn = [toolRectBtn, toolTextBtn, toolLineBtn, toolFreehandBtn, deleteBtn].find(btn => 
+    const activeBtn = [toolRectBtn, toolTextBtn, toolLineBtn, toolFreehandBtn, toolMoveBtn, deleteBtn].find(btn => 
       btn && btn.classList.contains('is-active')
     );
     
     if (activeBtn) {
-      // Don't update Delete button - it stays black
-      if (activeBtn === deleteBtn) {
+      // Don't update Delete or Move buttons - they stay black
+      if (activeBtn === deleteBtn || activeBtn === toolMoveBtn) {
         return;
       }
       
@@ -547,21 +566,46 @@
   toolTextBtn.onclick = () => setActiveTool('text');
   toolLineBtn.onclick = () => setActiveTool('line');
   toolFreehandBtn.onclick = () => setActiveTool('freehand');
+  toolMoveBtn.onclick = () => setActiveTool('move');
   deleteBtn.onclick = () => setActiveTool('delete');
   
   // Set initial active tool - restore from sessionStorage if available
   const savedTool = (typeof(Storage) !== "undefined") ? sessionStorage.getItem('selectedTool') : null;
   const initialTool = savedTool || 'freehand';
   setActiveTool(initialTool);
+  
+  // Initialize Move button state based on existing annotations
+  updateMoveButtonState();
 
   function resizeCanvasToImage() {
-    canvas.width = img.clientWidth;
-    canvas.height = img.clientHeight;
-    redraw();
+    // Ensure image is loaded and has dimensions
+    if (img.clientWidth > 0 && img.clientHeight > 0) {
+      canvas.width = img.clientWidth;
+      canvas.height = img.clientHeight;
+      redraw();
+    } else {
+      // If image not ready, wait a bit and try again
+      setTimeout(resizeCanvasToImage, 50);
+    }
   }
   img.addEventListener('load', resizeCanvasToImage);
   window.addEventListener('resize', resizeCanvasToImage);
-  if (img.complete) resizeCanvasToImage();
+  // Use requestAnimationFrame to ensure DOM is ready
+  if (img.complete) {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(resizeCanvasToImage);
+    });
+  } else {
+    // Also check periodically in case load event doesn't fire
+    const checkInterval = setInterval(() => {
+      if (img.complete && img.clientWidth > 0) {
+        clearInterval(checkInterval);
+        resizeCanvasToImage();
+      }
+    }, 100);
+    // Clear interval after 5 seconds to avoid infinite checking
+    setTimeout(() => clearInterval(checkInterval), 5000);
+  }
   
   // Text modal functions
   function showTextModal(x, y) {
@@ -715,8 +759,35 @@
   }
 
   function redraw() {
+    // Ensure canvas is properly sized before drawing
+    if (canvas.width !== img.clientWidth || canvas.height !== img.clientHeight) {
+      if (img.clientWidth > 0 && img.clientHeight > 0) {
+        canvas.width = img.clientWidth;
+        canvas.height = img.clientHeight;
+      } else {
+        // Canvas not ready, skip drawing
+        return;
+      }
+    }
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     existing.forEach(drawAnnotation);
+    // Update Move button state after redraw
+    updateMoveButtonState();
+  }
+
+  function updateMoveButtonState() {
+    // Show/hide Move button based on whether there are annotations on the page
+    if (toolMoveBtn) {
+      if (existing && existing.length > 0) {
+        toolMoveBtn.style.display = '';
+      } else {
+        toolMoveBtn.style.display = 'none';
+        // If Move tool is currently selected and there are no annotations, switch to a different tool
+        if (tool === 'move') {
+          setActiveTool('freehand');
+        }
+      }
+    }
   }
 
   function getCanvasCoordinates(e) {
@@ -765,6 +836,34 @@
     } else if (tool === 'text') {
       // Show modal for text input
       showTextModal(x, y);
+    } else if (tool === 'move') {
+      // Check if clicking on an existing annotation
+      const id = hitTest(x, y);
+      if (id != null) {
+        // Find the annotation
+        const ann = existing.find(a => a.id === id);
+        if (ann) {
+          dragging = true;
+          draggedAnnotation = ann;
+          // Store original position
+          originalAnnotationX = ann.x;
+          originalAnnotationY = ann.y;
+          // Calculate offset from click point to annotation origin
+          dragOffsetX = x - ann.x;
+          dragOffsetY = y - ann.y;
+          // For freehand, store original path
+          if (ann.kind === 'freehand' && ann.text) {
+            try {
+              originalFreehandPath = JSON.parse(ann.text);
+            } catch (e) {
+              console.error('Error parsing freehand path on drag start:', e);
+              originalFreehandPath = null;
+            }
+          } else {
+            originalFreehandPath = null;
+          }
+        }
+      }
     } else if (tool === 'delete') {
       const id = hitTest(x, y);
       if (id != null) deleteAnnotation(id);
@@ -794,6 +893,33 @@
     } else if (tool === 'text') {
       // Show modal for text input
       showTextModal(x, y);
+    } else if (tool === 'move') {
+      // Check if clicking on an existing annotation
+      const id = hitTest(x, y);
+      if (id != null) {
+        // Find the annotation
+        const ann = existing.find(a => a.id === id);
+        if (ann) {
+          dragging = true;
+          draggedAnnotation = ann;
+          // Store original position
+          originalAnnotationX = ann.x;
+          originalAnnotationY = ann.y;
+          // Calculate offset from click point to annotation origin
+          dragOffsetX = x - ann.x;
+          dragOffsetY = y - ann.y;
+          // For freehand, store original path
+          if (ann.kind === 'freehand' && ann.text) {
+            try {
+              originalFreehandPath = JSON.parse(ann.text);
+            } catch (e) {
+              originalFreehandPath = null;
+            }
+          } else {
+            originalFreehandPath = null;
+          }
+        }
+      }
     } else if (tool === 'delete') {
       const id = hitTest(x, y);
       if (id != null) deleteAnnotation(id);
@@ -801,6 +927,56 @@
   });
 
   canvas.addEventListener('mousemove', (e) => {
+    // Handle dragging annotations
+    if (dragging && draggedAnnotation) {
+      const coords = getCanvasCoordinates(e);
+      const newX = coords.x - dragOffsetX;
+      const newY = coords.y - dragOffsetY;
+      
+      // For freehand annotations, update all path points in real-time
+      if (draggedAnnotation.kind === 'freehand' && originalFreehandPath) {
+        try {
+          // Calculate delta from original bounding box position
+          const deltaX = newX - originalAnnotationX;
+          const deltaY = newY - originalAnnotationY;
+          
+          // Update all path points from original path (not current path)
+          const updatedPath = originalFreehandPath.map(p => ({
+            x: p.x + deltaX,
+            y: p.y + deltaY
+          }));
+          
+          // Update bounding box
+          const xs = updatedPath.map(p => p.x);
+          const ys = updatedPath.map(p => p.y);
+          const minX = Math.min(...xs);
+          const minY = Math.min(...ys);
+          const maxX = Math.max(...xs);
+          const maxY = Math.max(...ys);
+          
+          // Update annotation
+          draggedAnnotation.x = minX;
+          draggedAnnotation.y = minY;
+          draggedAnnotation.w = maxX - minX;
+          draggedAnnotation.h = maxY - minY;
+          draggedAnnotation.text = JSON.stringify(updatedPath);
+        } catch (e) {
+          console.error('Error updating freehand path during drag:', e);
+          // Fallback: just update position
+          draggedAnnotation.x = newX;
+          draggedAnnotation.y = newY;
+        }
+      } else {
+        // For other annotation types, just update x, y
+        draggedAnnotation.x = newX;
+        draggedAnnotation.y = newY;
+      }
+      
+      // Redraw canvas with updated position
+      redraw();
+      return;
+    }
+    
     if (!drawing) return;
     const coords = getCanvasCoordinates(e);
     const x = coords.x;
@@ -827,6 +1003,57 @@
   // Touch move for stylus/mobile support
   canvas.addEventListener('touchmove', (e) => {
     e.preventDefault();
+    
+    // Handle dragging annotations
+    if (dragging && draggedAnnotation) {
+      const coords = getCanvasCoordinates(e);
+      const newX = coords.x - dragOffsetX;
+      const newY = coords.y - dragOffsetY;
+      
+      // For freehand annotations, update all path points in real-time
+      if (draggedAnnotation.kind === 'freehand' && originalFreehandPath) {
+        try {
+          // Calculate delta from original bounding box position
+          const deltaX = newX - originalAnnotationX;
+          const deltaY = newY - originalAnnotationY;
+          
+          // Update all path points from original path (not current path)
+          const updatedPath = originalFreehandPath.map(p => ({
+            x: p.x + deltaX,
+            y: p.y + deltaY
+          }));
+          
+          // Update bounding box
+          const xs = updatedPath.map(p => p.x);
+          const ys = updatedPath.map(p => p.y);
+          const minX = Math.min(...xs);
+          const minY = Math.min(...ys);
+          const maxX = Math.max(...xs);
+          const maxY = Math.max(...ys);
+          
+          // Update annotation
+          draggedAnnotation.x = minX;
+          draggedAnnotation.y = minY;
+          draggedAnnotation.w = maxX - minX;
+          draggedAnnotation.h = maxY - minY;
+          draggedAnnotation.text = JSON.stringify(updatedPath);
+        } catch (e) {
+          console.error('Error updating freehand path during drag:', e);
+          // Fallback: just update position
+          draggedAnnotation.x = newX;
+          draggedAnnotation.y = newY;
+        }
+      } else {
+        // For other annotation types, just update x, y
+        draggedAnnotation.x = newX;
+        draggedAnnotation.y = newY;
+      }
+      
+      // Redraw canvas with updated position
+      redraw();
+      return;
+    }
+    
     if (!drawing) return;
     const coords = getCanvasCoordinates(e);
     const x = coords.x;
@@ -851,6 +1078,76 @@
   });
 
   canvas.addEventListener('mouseup', (e) => {
+    // Handle drag end
+    if (dragging && draggedAnnotation) {
+      const coords = getCanvasCoordinates(e);
+      const newX = coords.x - dragOffsetX;
+      const newY = coords.y - dragOffsetY;
+      
+      // For freehand annotations, update all path points
+      if (draggedAnnotation.kind === 'freehand' && originalFreehandPath) {
+        try {
+          // Calculate delta from original bounding box position
+          const deltaX = newX - originalAnnotationX;
+          const deltaY = newY - originalAnnotationY;
+          
+          // Update all path points from original path (not current path)
+          const updatedPath = originalFreehandPath.map(p => ({
+            x: p.x + deltaX,
+            y: p.y + deltaY
+          }));
+          
+          // Update bounding box
+          const xs = updatedPath.map(p => p.x);
+          const ys = updatedPath.map(p => p.y);
+          const minX = Math.min(...xs);
+          const minY = Math.min(...ys);
+          const maxX = Math.max(...xs);
+          const maxY = Math.max(...ys);
+          
+          // Update annotation
+          draggedAnnotation.x = minX;
+          draggedAnnotation.y = minY;
+          draggedAnnotation.w = maxX - minX;
+          draggedAnnotation.h = maxY - minY;
+          draggedAnnotation.text = JSON.stringify(updatedPath);
+          
+          // Save to database
+          updateAnnotationPosition(draggedAnnotation.id, {
+            kind: 'freehand',
+            x: minX,
+            y: minY,
+            w: maxX - minX,
+            h: maxY - minY,
+            text: JSON.stringify(updatedPath)
+          });
+        } catch (e) {
+          console.error('Error updating freehand path:', e);
+          // Fallback: just update position
+          updateAnnotationPosition(draggedAnnotation.id, {
+            x: newX,
+            y: newY
+          });
+        }
+      } else {
+        // For other annotation types, just update x, y
+        updateAnnotationPosition(draggedAnnotation.id, {
+          x: newX,
+          y: newY
+        });
+      }
+      
+      // Reset drag state
+      dragging = false;
+      draggedAnnotation = null;
+      dragOffsetX = 0;
+      dragOffsetY = 0;
+      originalAnnotationX = 0;
+      originalAnnotationY = 0;
+      originalFreehandPath = null;
+      return;
+    }
+    
     if (!drawing) return;
     
     if (tool === 'freehand') {
@@ -896,6 +1193,84 @@
   // Touch end for stylus/mobile support
   canvas.addEventListener('touchend', (e) => {
     e.preventDefault();
+    
+    // Handle drag end
+    if (dragging && draggedAnnotation) {
+      // For touchend, try to get coordinates from changedTouches, or use current annotation position
+      let coords;
+      if (e.changedTouches && e.changedTouches.length > 0) {
+        coords = getCanvasCoordinates(e.changedTouches[0]);
+      } else {
+        // Fallback: use current annotation position
+        coords = { x: draggedAnnotation.x + dragOffsetX, y: draggedAnnotation.y + dragOffsetY };
+      }
+      const newX = coords.x - dragOffsetX;
+      const newY = coords.y - dragOffsetY;
+      
+      // For freehand annotations, update all path points
+      if (draggedAnnotation.kind === 'freehand' && originalFreehandPath) {
+        try {
+          // Calculate delta from original bounding box position
+          const deltaX = newX - originalAnnotationX;
+          const deltaY = newY - originalAnnotationY;
+          
+          // Update all path points from original path (not current path)
+          const updatedPath = originalFreehandPath.map(p => ({
+            x: p.x + deltaX,
+            y: p.y + deltaY
+          }));
+          
+          // Update bounding box
+          const xs = updatedPath.map(p => p.x);
+          const ys = updatedPath.map(p => p.y);
+          const minX = Math.min(...xs);
+          const minY = Math.min(...ys);
+          const maxX = Math.max(...xs);
+          const maxY = Math.max(...ys);
+          
+          // Update annotation
+          draggedAnnotation.x = minX;
+          draggedAnnotation.y = minY;
+          draggedAnnotation.w = maxX - minX;
+          draggedAnnotation.h = maxY - minY;
+          draggedAnnotation.text = JSON.stringify(updatedPath);
+          
+          // Save to database
+          updateAnnotationPosition(draggedAnnotation.id, {
+            kind: 'freehand',
+            x: minX,
+            y: minY,
+            w: maxX - minX,
+            h: maxY - minY,
+            text: JSON.stringify(updatedPath)
+          });
+        } catch (e) {
+          console.error('Error updating freehand path:', e);
+          // Fallback: just update position
+          updateAnnotationPosition(draggedAnnotation.id, {
+            x: newX,
+            y: newY
+          });
+        }
+      } else {
+        // For other annotation types, just update x, y
+        updateAnnotationPosition(draggedAnnotation.id, {
+          x: newX,
+          y: newY
+        });
+      }
+      
+      // Reset drag state
+      dragging = false;
+      draggedAnnotation = null;
+      dragOffsetX = 0;
+      dragOffsetY = 0;
+      originalAnnotationX = 0;
+      originalAnnotationY = 0;
+      originalFreehandPath = null;
+      return;
+    }
+    
     if (!drawing) return;
     
     if (tool === 'freehand') {
@@ -947,6 +1322,8 @@
         // Add to existing array and redraw
         existing.push(resp);
         redraw();
+        // Update Move button state (redraw already calls it, but being explicit)
+        updateMoveButtonState();
       }
     }).catch(err => {
       console.error('Error saving annotation:', err);
@@ -963,8 +1340,34 @@
           existing = existing.filter(a => a.id !== id);
           // Redraw canvas
           redraw();
+          // Update Move button state (redraw already calls it, but being explicit)
+          updateMoveButtonState();
           // Keep Delete tool selected (don't change tool)
         }
+      });
+  }
+
+  function updateAnnotationPosition(id, data) {
+    fetch(`${window.BASE_PATH || ''}/annotations/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    })
+      .then(r => r.json())
+      .then(resp => {
+        if (resp.status === 'success' || resp.id) {
+          // Update local annotation
+          const index = existing.findIndex(a => a.id === id);
+          if (index !== -1) {
+            existing[index] = { ...existing[index], ...data };
+            // Redraw canvas
+            redraw();
+          }
+        }
+      })
+      .catch(err => {
+        console.error('Error updating annotation:', err);
+        alert('Failed to save annotation position');
       });
   }
 
@@ -988,13 +1391,30 @@
             const path = JSON.parse(a.text);
             if (Array.isArray(path) && path.length > 0) {
               // Check if point is within bounding box first (quick check)
-              if (x >= a.x && x <= a.x + a.w && y >= a.y && y <= a.y + a.h) {
+              // Handle cases where w or h might be missing
+              const w = a.w || 0;
+              const h = a.h || 0;
+              if (w > 0 && h > 0 && x >= a.x && x <= a.x + w && y >= a.y && y <= a.y + h) {
                 // Check distance to path segments
                 for (let j = 0; j < path.length - 1; j++) {
                   const p1 = path[j];
                   const p2 = path[j + 1];
-                  const dist = pointToLineDistance(x, y, p1.x, p1.y, p2.x, p2.y);
-                  if (dist < 8) return a.id; // 8px threshold for freehand
+                  if (p1 && p2 && typeof p1.x === 'number' && typeof p1.y === 'number' && 
+                      typeof p2.x === 'number' && typeof p2.y === 'number') {
+                    const dist = pointToLineDistance(x, y, p1.x, p1.y, p2.x, p2.y);
+                    if (dist < 8) return a.id; // 8px threshold for freehand
+                  }
+                }
+              } else {
+                // If bounding box is invalid, check path segments directly
+                for (let j = 0; j < path.length - 1; j++) {
+                  const p1 = path[j];
+                  const p2 = path[j + 1];
+                  if (p1 && p2 && typeof p1.x === 'number' && typeof p1.y === 'number' && 
+                      typeof p2.x === 'number' && typeof p2.y === 'number') {
+                    const dist = pointToLineDistance(x, y, p1.x, p1.y, p2.x, p2.y);
+                    if (dist < 8) return a.id; // 8px threshold for freehand
+                  }
                 }
               }
             }
