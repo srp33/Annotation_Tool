@@ -1,6 +1,6 @@
 #!/bin/bash
 
-docker stop pdf-annotator
+docker stop smart
 docker system prune -f
 
 # Handle app.db file
@@ -22,26 +22,26 @@ else
     chmod 666 "$(pwd)/app.db"
 fi
 
-echo "Starting PDF Annotator container..."
+echo "Starting SMART container..."
 #docker run -i -t \
 docker run -d \
-    --name pdf-annotator \
+    --name smart \
     -p 3389:3389 \
     -v "$(pwd)/app.db:/app/app.db" \
     -v "$(pwd)/uploads:/app/uploads" \
     -v "$(pwd)/images:/app/images" \
     -e FLASK_APP=app.py \
     -e FLASK_ENV=production \
-    -e SCRIPT_NAME=/Annotation_Tool \
+    -e SCRIPT_NAME=/SMART \
     --restart unless-stopped \
-    pdf-annotator:latest
+    smart:latest
 
 if [ $? -eq 0 ]; then
     echo "✓ Container started successfully!"
     echo "Application is running at http://localhost:3389"
-    echo "View logs with: docker logs -f pdf-annotator"
-    echo "Stop with: docker stop pdf-annotator"
-    echo "Remove with: docker rm pdf-annotator"
+    echo "View logs with: docker logs -f smart"
+    echo "Stop with: docker stop smart"
+    echo "Remove with: docker rm smart"
 else
     echo "✗ Failed to start container"
     exit 1

@@ -34,23 +34,23 @@ docker-compose down
 
 ```bash
 # Build the image
-docker build -t pdf-annotator:latest .
+docker build -t smart:latest .
 
 # Run the container
 docker run -d \
-    --name pdf-annotator \
+    --name smart \
     -p 3389:3389 \
     -v "$(pwd)/app.db:/app/app.db" \
     -v "$(pwd)/uploads:/app/uploads" \
     -v "$(pwd)/images:/app/images" \
-    pdf-annotator:latest
+    smart:latest
 
 # View logs
-docker logs -f pdf-annotator
+docker logs -f smart
 
 # Stop and remove
-docker stop pdf-annotator
-docker rm pdf-annotator
+docker stop smart
+docker rm smart
 ```
 
 ## Accessing the Application
@@ -76,7 +76,7 @@ The following directories are mounted as volumes to persist data:
 
 ### View container logs
 ```bash
-docker logs -f pdf-annotator
+docker logs -f smart
 # or with docker-compose
 docker-compose logs -f
 ```
@@ -95,6 +95,6 @@ docker ps
 
 ### Access container shell
 ```bash
-docker exec -it pdf-annotator /bin/bash
+docker exec -it smart /bin/bash
 ```
 

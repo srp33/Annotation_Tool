@@ -1,9 +1,9 @@
 #!/bin/bash
 
-docker stop pdf-annotator
+docker stop smart
 docker system prune -f
 
-docker build -t pdf-annotator:latest .
+docker build -t smart:latest .
 
 if [ $? -eq 0 ]; then
     echo "✓ Docker image built successfully!"

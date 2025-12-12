@@ -6,5 +6,5 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 export FLASK_APP=app.py
 # Set SCRIPT_NAME if running behind a proxy with URL prefix
 # For local development without prefix, comment out or set to empty string
-export SCRIPT_NAME=/Annotation_Tool
+export SCRIPT_NAME=/SMART
 flask run --debug

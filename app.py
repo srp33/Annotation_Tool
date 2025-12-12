@@ -27,7 +27,7 @@ app.config["SECRET_KEY"] = "dev-key"
 app.config["DATABASE_URL"] = f"sqlite:///{BASE_DIR / 'app.db'}"
 
 # Support for running behind a reverse proxy with URL prefix
-# Set SCRIPT_NAME environment variable to the prefix (e.g., /Annotation_Tool)
+# Set SCRIPT_NAME environment variable to the prefix (e.g., /SMART)
 # For local development, leave unset or set to empty string
 # NOTE: We read SCRIPT_NAME from os.environ but don't set it back there.
 # This prevents Gunicorn from trying to process it and causing errors with paths
