@@ -1041,8 +1041,26 @@ def update_annotation(ann_id):
                     "text": data.get("text")  # Updated path JSON
                 }
             )
+        elif existing.kind == "text" and "text" in data:
+            # Update text annotation (text content, position, and dimensions)
+            conn.execute(
+                text("""
+                    UPDATE annotations 
+                    SET x = :x, y = :y, w = :w, h = :h, text = :text
+                    WHERE id = :ann_id AND user_id = :user_id
+                """),
+                {
+                    "ann_id": ann_id,
+                    "user_id": user['id'],
+                    "x": data.get("x"),
+                    "y": data.get("y"),
+                    "w": data.get("w"),
+                    "h": data.get("h"),
+                    "text": data.get("text")
+                }
+            )
         else:
-            # Update regular annotations (rect, text, line)
+            # Update regular annotations (rect, line) - just position
             conn.execute(
                 text("""
                     UPDATE annotations 

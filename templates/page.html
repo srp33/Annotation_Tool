@@ -100,12 +100,42 @@
             </div>
           </div>
           <input class="input" id="color-input" type="hidden" value="#FF0000">
-          <button class="button is-dark is-outlined" id="tool-freehand">Freehand</button>
-          <button class="button is-dark is-outlined" id="tool-rect">Rectangle</button>
-          <button class="button is-dark is-outlined" id="tool-line">Line</button>
-          <button class="button is-dark is-outlined" id="tool-text">Text</button>
-          <button class="button is-dark is-outlined" id="tool-move">Move</button>
-          <button class="button is-dark is-outlined" id="tool-delete">Delete</button>
+          <button class="button is-dark is-outlined" id="tool-rect">
+            <span class="icon is-small" style="margin-right: 0.25rem;">
+              <i class="far fa-square"></i>
+            </span>
+            <span>Rectangle</span>
+          </button>
+          <button class="button is-dark is-outlined" id="tool-line">
+            <span class="icon is-small" style="margin-right: 0.25rem;">
+              <i class="fas fa-minus"></i>
+            </span>
+            <span>Line</span>
+          </button>
+          <button class="button is-dark is-outlined" id="tool-freehand">
+            <span class="icon is-small" style="margin-right: 0.25rem;">
+              <i class="fas fa-pencil"></i>
+            </span>
+            <span>Freehand</span>
+          </button>
+          <button class="button is-dark is-outlined" id="tool-text">
+            <span class="icon is-small" style="margin-right: 0.25rem;">
+              <i class="fas fa-font"></i>
+            </span>
+            <span>Text</span>
+          </button>
+          <button class="button is-dark is-outlined" id="tool-move">
+            <span class="icon is-small" style="margin-right: 0.25rem;">
+              <i class="fas fa-arrows-alt"></i>
+            </span>
+            <span>Move</span>
+          </button>
+          <button class="button is-dark is-outlined" id="tool-delete">
+            <span class="icon is-small" style="margin-right: 0.25rem;">
+              <i class="far fa-trash-alt"></i>
+            </span>
+            <span>Delete</span>
+          </button>
           <button class="button is-dark is-outlined" id="download-png-btn" href="#" onclick="downloadAnnotatedPNG(event); return false;" style="display: none;">
             <span>Download PNG</span>
           </button>
@@ -346,7 +376,7 @@
   <div class="modal-background"></div>
   <div class="modal-card">
     <header class="modal-card-head">
-      <p class="modal-card-title">Enter Text</p>
+      <p class="modal-card-title" id="text-modal-title">Enter Text</p>
       <button class="delete" aria-label="close" id="close-text-modal"></button>
     </header>
     <section class="modal-card-body">
@@ -389,6 +419,7 @@
   // Text modal elements
   const textModal = document.getElementById('text-modal');
   const textModalInput = document.getElementById('text-modal-input');
+  const textModalTitle = document.getElementById('text-modal-title');
   const submitTextBtn = document.getElementById('submit-text-modal');
   const cancelTextBtn = document.getElementById('cancel-text-modal');
   const closeTextModalBtn = document.getElementById('close-text-modal');
@@ -398,6 +429,7 @@
   let startX = 0, startY = 0;
   let freehandPath = [];
   let pendingTextPosition = null; // Store x, y when text tool is clicked
+  let editingTextAnnotation = null; // Store annotation being edited
   
   // Drag state variables
   let dragging = false;
@@ -416,6 +448,10 @@
       e.stopPropagation();
       const color = btn.getAttribute('data-color');
       colorInput.value = color;
+      // Save selected color to sessionStorage
+      if (typeof(Storage) !== "undefined") {
+        sessionStorage.setItem('selectedColor', color);
+      }
       // Set white background, colored border, and colored icon
       colorPickerBtn.style.backgroundColor = '#FFFFFF';
       colorPickerBtn.style.border = `1px solid ${color}`;
@@ -443,8 +479,16 @@
   
   // Initialize color picker button
   if (colorPickerBtn) {
-    // Set initial color based on colorInput value
-    const initialColor = colorInput.value;
+    // Restore color from sessionStorage if available, otherwise use colorInput default
+    const savedColor = (typeof(Storage) !== "undefined") ? sessionStorage.getItem('selectedColor') : null;
+    const initialColor = savedColor || colorInput.value;
+    
+    // Update colorInput value if we restored from sessionStorage
+    if (savedColor) {
+      colorInput.value = savedColor;
+    }
+    
+    // Set color picker button styling
     colorPickerBtn.style.backgroundColor = '#FFFFFF';
     colorPickerBtn.style.border = `1px solid ${initialColor}`;
     const colorPickerIcon = document.getElementById('color-picker-icon');
@@ -468,9 +512,9 @@
   });
 
   function setActiveTool(selectedTool) {
-    // Prevent selecting Move tool if there are no annotations
-    if (selectedTool === 'move' && (!existing || existing.length === 0)) {
-      selectedTool = 'freehand'; // Fallback to freehand
+    // Prevent selecting Move or Delete tools if there are no annotations
+    if ((selectedTool === 'move' || selectedTool === 'delete') && (!existing || existing.length === 0)) {
+      selectedTool = 'rect'; // Fallback to rectangle
     }
     
     tool = selectedTool;
@@ -571,7 +615,8 @@
   
   // Set initial active tool - restore from sessionStorage if available
   const savedTool = (typeof(Storage) !== "undefined") ? sessionStorage.getItem('selectedTool') : null;
-  const initialTool = savedTool || 'freehand';
+  // If no saved tool, default to Rectangle; otherwise use saved tool
+  const initialTool = savedTool || 'rect';
   setActiveTool(initialTool);
   
   // Initialize Move button state based on existing annotations
@@ -608,10 +653,25 @@
   }
   
   // Text modal functions
-  function showTextModal(x, y) {
+  function showTextModal(x, y, annotationToEdit = null) {
     if (!textModal || !textModalInput) return;
-    pendingTextPosition = { x, y };
-    textModalInput.value = '';
+    
+    editingTextAnnotation = annotationToEdit;
+    
+    if (annotationToEdit) {
+      // Editing existing annotation
+      pendingTextPosition = { x: annotationToEdit.x, y: annotationToEdit.y };
+      textModalInput.value = annotationToEdit.text || '';
+      if (textModalTitle) textModalTitle.textContent = 'Edit Text';
+      if (submitTextBtn) submitTextBtn.textContent = 'Update Text';
+    } else {
+      // Creating new annotation
+      pendingTextPosition = { x, y };
+      textModalInput.value = '';
+      if (textModalTitle) textModalTitle.textContent = 'Enter Text';
+      if (submitTextBtn) submitTextBtn.textContent = 'Add Text';
+    }
+    
     textModal.classList.add('is-active');
     
     // Focus the input after a short delay to ensure modal is visible
@@ -619,6 +679,10 @@
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         textModalInput.focus();
+        // Select all text when editing
+        if (annotationToEdit && textModalInput.value) {
+          textModalInput.select();
+        }
       });
     });
   }
@@ -627,12 +691,17 @@
     if (!textModal || !textModalInput) return;
     textModal.classList.remove('is-active');
     pendingTextPosition = null;
+    editingTextAnnotation = null;
     textModalInput.value = '';
   }
   
   function submitTextFromModal() {
     const txt = textModalInput.value; // Don't trim - preserve line breaks
     if (!txt || !txt.trim()) {
+      // If editing and text is empty, delete the annotation
+      if (editingTextAnnotation) {
+        deleteAnnotation(editingTextAnnotation.id);
+      }
       hideTextModal();
       return;
     }
@@ -662,15 +731,29 @@
     const textWidth = maxLineWidth;
     const textHeight = lines.length * lineHeight;
     
-    saveAnnotation({ 
-      kind: 'text', 
-      x: x, 
-      y: y, 
-      w: textWidth,
-      h: textHeight,
-      text: txt, // Preserve line breaks
-      color: colorInput.value 
-    });
+    if (editingTextAnnotation) {
+      // Update existing annotation
+      updateAnnotationPosition(editingTextAnnotation.id, {
+        kind: 'text',
+        x: x,
+        y: y,
+        w: textWidth,
+        h: textHeight,
+        text: txt,
+        color: editingTextAnnotation.color // Keep original color
+      });
+    } else {
+      // Create new annotation
+      saveAnnotation({ 
+        kind: 'text', 
+        x: x, 
+        y: y, 
+        w: textWidth,
+        h: textHeight,
+        text: txt, // Preserve line breaks
+        color: colorInput.value 
+      });
+    }
     
     hideTextModal();
   }
@@ -784,8 +867,14 @@
         toolMoveBtn.style.display = 'none';
         // If Move tool is currently selected and there are no annotations, switch to a different tool
         if (tool === 'move') {
-          setActiveTool('freehand');
+          setActiveTool('rect');
         }
+      }
+    }
+    // If Delete tool is currently selected and there are no annotations, switch to a different tool
+    if (deleteBtn && (!existing || existing.length === 0)) {
+      if (tool === 'delete') {
+        setActiveTool('rect');
       }
     }
   }
@@ -1190,6 +1279,35 @@
     drawing = false;
   });
 
+  // Double-click to edit text annotations
+  canvas.addEventListener('dblclick', (e) => {
+    // Prevent triggering canvas actions when clicking on color picker or modal
+    const target = e.target;
+    if (target.closest('#color-picker-container') || target.closest('#text-modal') || target.closest('.modal')) {
+      return;
+    }
+    
+    // Check if click is within toolbar area
+    const toolbar = document.querySelector('.toolbar');
+    if (toolbar && toolbar.contains(target)) {
+      return;
+    }
+    
+    const coords = getCanvasCoordinates(e);
+    const x = coords.x;
+    const y = coords.y;
+    
+    // Check if double-click is on a text annotation
+    const id = hitTest(x, y);
+    if (id != null) {
+      const ann = existing.find(a => a.id === id);
+      if (ann && ann.kind === 'text') {
+        // Show modal with existing text for editing
+        showTextModal(x, y, ann);
+      }
+    }
+  });
+
   // Touch end for stylus/mobile support
   canvas.addEventListener('touchend', (e) => {
     e.preventDefault();
@@ -1324,6 +1442,8 @@
         redraw();
         // Update Move button state (redraw already calls it, but being explicit)
         updateMoveButtonState();
+        // Switch to Move tool after adding an annotation
+        setActiveTool('move');
       }
     }).catch(err => {
       console.error('Error saving annotation:', err);
@@ -1356,10 +1476,25 @@
       .then(r => r.json())
       .then(resp => {
         if (resp.status === 'success' || resp.id) {
-          // Update local annotation
+          // Update local annotation with response data (which includes all updated fields)
           const index = existing.findIndex(a => a.id === id);
           if (index !== -1) {
-            existing[index] = { ...existing[index], ...data };
+            // Use response data if available, otherwise fall back to data we sent
+            if (resp.id) {
+              existing[index] = {
+                id: resp.id,
+                kind: resp.kind || existing[index].kind,
+                x: resp.x !== undefined ? resp.x : existing[index].x,
+                y: resp.y !== undefined ? resp.y : existing[index].y,
+                w: resp.w !== undefined ? resp.w : existing[index].w,
+                h: resp.h !== undefined ? resp.h : existing[index].h,
+                text: resp.text !== undefined ? resp.text : existing[index].text,
+                color: resp.color !== undefined ? resp.color : existing[index].color
+              };
+            } else {
+              // Fallback: merge with data we sent
+              existing[index] = { ...existing[index], ...data };
+            }
             // Redraw canvas
             redraw();
           }
@@ -1367,7 +1502,7 @@
       })
       .catch(err => {
         console.error('Error updating annotation:', err);
-        alert('Failed to save annotation position');
+        alert('Failed to save annotation');
       });
   }
 

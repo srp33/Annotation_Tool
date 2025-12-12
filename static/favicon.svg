@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <style>
+    .s { fill: #007bff; font-family: 'Arial Black', 'Arial Bold', Arial, sans-serif; font-weight: 900; }
+    .m { fill: #28a745; font-family: 'Arial Black', 'Arial Bold', Arial, sans-serif; font-weight: 900; }
+    .a { fill: #ff9800; font-family: 'Arial Black', 'Arial Bold', Arial, sans-serif; font-weight: 900; }
+    .r { fill: #dc3545; font-family: 'Arial Black', 'Arial Bold', Arial, sans-serif; font-weight: 900; }
+    .t { fill: #6f42c1; font-family: 'Arial Black', 'Arial Bold', Arial, sans-serif; font-weight: 900; }
+    .dot { fill: #666; font-family: 'Arial Black', 'Arial Bold', Arial, sans-serif; font-weight: 900; }
+  </style>
+  <text x="3" y="48" font-size="42" class="s">S</text>
+  <text x="22" y="48" font-size="42" class="dot">.</text>
+  <text x="30" y="48" font-size="42" class="m">M</text>
+  <text x="49" y="48" font-size="42" class="dot">.</text>
+  <text x="3" y="78" font-size="42" class="a">A</text>
+  <text x="22" y="78" font-size="42" class="dot">.</text>
+  <text x="30" y="78" font-size="42" class="r">R</text>
+  <text x="49" y="78" font-size="42" class="dot">.</text>
+  <text x="57" y="78" font-size="42" class="t">T</text>
+</svg>
