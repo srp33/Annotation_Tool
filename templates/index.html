@@ -64,6 +64,17 @@
             </div>
             <div class="level-right">
               <div class="level-item">
+                <form method="POST" action="{{ url_for('simulate_data', doc_id=doc.id) }}" style="display: inline-block;" 
+                      onsubmit="return confirm('This will generate emotion data for all 100 test users for this document. Existing reactions for test users will be overwritten. Continue?');">
+                  <button type="submit" class="button is-warning is-outlined mr-2" title="Generate emotion data for test users">
+                    <span class="icon">
+                      <i class="fas fa-magic"></i>
+                    </span>
+                    <span>Simulate Data</span>
+                  </button>
+                </form>
+              </div>
+              <div class="level-item">
                 <a href="{{ url_for('view_plot', doc_id=doc.id) }}" class="button is-success is-outlined mr-2" title="View emotions plot">
                   <span class="icon">
                     <i class="fas fa-chart-line"></i>
@@ -241,10 +252,10 @@
             <span style="font-size:.8rem;">Bored</span>
           </div>
         </button>
-        <button class="button is-light emoji-btn" data-emoji="😡" title="Triggered">
+        <button class="button is-light emoji-btn" data-emoji="😡" title="Offended">
           <div style="display:flex;flex-direction:column;align-items:center;line-height:1;">
             <span style="font-size:1.6rem;">😡</span>
-            <span style="font-size:.8rem;">Triggered</span>
+            <span style="font-size:.8rem;">Offended</span>
           </div>
         </button>
         <button class="button is-light emoji-btn" data-emoji="😲" title="Surprised">
@@ -557,6 +568,31 @@
     
     const levelRight = document.createElement('div');
     levelRight.className = 'level-right';
+    
+    // Create simulate data button
+    const levelItemSimulate = document.createElement('div');
+    levelItemSimulate.className = 'level-item';
+    const simulateForm = document.createElement('form');
+    simulateForm.method = 'POST';
+    simulateForm.action = (window.BASE_PATH || '') + '/documents/' + docId + '/simulate-data';
+    simulateForm.style.display = 'inline-block';
+    simulateForm.onsubmit = function() {
+      return confirm('This will generate emotion data for all 100 test users for this document. Existing reactions for test users will be overwritten. Continue?');
+    };
+    const simulateButton = document.createElement('button');
+    simulateButton.type = 'submit';
+    simulateButton.className = 'button is-warning is-outlined mr-2';
+    simulateButton.title = 'Generate emotion data for test users';
+    const simulateIconSpan = document.createElement('span');
+    simulateIconSpan.className = 'icon';
+    simulateIconSpan.innerHTML = '<i class="fas fa-magic"></i>';
+    simulateButton.appendChild(simulateIconSpan);
+    const simulateTextSpan = document.createElement('span');
+    simulateTextSpan.textContent = 'Simulate Data';
+    simulateButton.appendChild(simulateTextSpan);
+    simulateForm.appendChild(simulateButton);
+    levelItemSimulate.appendChild(simulateForm);
+    levelRight.appendChild(levelItemSimulate);
     
     // Create view plot button
     const levelItemPlot = document.createElement('div');

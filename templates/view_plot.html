@@ -2,6 +2,13 @@
 {% set document_name = doc.filename if doc and doc.filename else None %}
 {% block content %}
 
+{% if request.args.get('simulated') %}
+<div class="notification is-success is-light mb-4">
+  <button class="delete" onclick="this.parentElement.remove()"></button>
+  <p><strong>Success!</strong> Generated emotion data for {{ request.args.get('simulated') }} reactions across all test users.</p>
+</div>
+{% endif %}
+
 <div class="box">
   <div class="content mb-4">
     <p class="has-text-grey">
@@ -24,7 +31,7 @@
   
   // Define emotion order (same as in the app - top to bottom as shown on student page)
   // Plotly displays categories from bottom to top, so we reverse to match the student page order
-  const emotionOrder = ['Surprised', 'Triggered', 'Bored', 'Overwhelmed', 'Frustrated', 'Confused', 'Okay', 'Excited'];
+  const emotionOrder = ['Surprised', 'Offended', 'Bored', 'Overwhelmed', 'Frustrated', 'Confused', 'Okay', 'Excited'];
   
   // Color palette for different emotions
   const colors = [
@@ -34,7 +41,7 @@
     '#FFA500', // Frustrated - Orange
     '#9370DB', // Overwhelmed - Medium Purple
     '#D3D3D3', // Bored - Light Gray
-    '#FF6347', // Triggered - Tomato
+    '#FF6347', // Offended - Tomato
     '#FF69B4'  // Surprised - Hot Pink
   ];
   

@@ -14,6 +14,7 @@ import io
 import json
 import zipfile
 import shutil
+import random
 
 BASE_DIR = Path(__file__).parent.resolve()
 UPLOAD_DIR = BASE_DIR / "uploads"
@@ -1671,6 +1672,41 @@ def create_user():
     
     return render_template("create_user.html", current_user=get_current_user())
 
+@app.route("/users/generate-test-users", methods=["POST"])
+@teacher_required
+def generate_test_users():
+    """Generate 100 test user accounts: test_user1 through test_user100"""
+    password_hash = hash_password("test_user")
+    created_count = 0
+    skipped_count = 0
+    created_at = dt.datetime.utcnow().isoformat()
+    
+    with engine.begin() as conn:
+        for i in range(1, 101):
+            username = f"test_user{i}"
+            try:
+                conn.execute(
+                    text("""
+                        INSERT INTO users (username, password_hash, role, created_at)
+                        VALUES (:username, :password_hash, :role, :created_at)
+                    """),
+                    {
+                        "username": username,
+                        "password_hash": password_hash,
+                        "role": "student",
+                        "created_at": created_at
+                    }
+                )
+                created_count += 1
+            except Exception:
+                # Username already exists, skip it
+                skipped_count += 1
+                pass
+    
+    # Redirect back to users page with a success message
+    # We'll use flash messages if available, or just redirect
+    return redirect(url_for("list_users") + f"?created={created_count}&skipped={skipped_count}")
+
 @app.route("/documents/<doc_id>/assign", methods=["GET", "POST"])
 @teacher_required
 def assign_document(doc_id):
@@ -1742,7 +1778,7 @@ def download_emotions(doc_id):
         "😤": "Frustrated",
         "😢": "Overwhelmed",
         "😴": "Bored",
-        "😡": "Triggered",
+        "😡": "Offended",
         "😲": "Surprised"
     }
     
@@ -1813,6 +1849,358 @@ def download_emotions(doc_id):
         }
     )
 
+@app.route("/documents/<doc_id>/simulate-data", methods=["POST"])
+@teacher_required
+def simulate_data(doc_id):
+    """Generate emotion data for all 100 test users for a document"""
+    user = get_current_user()
+    
+    # Emoji mapping
+    emojis = {
+        "Okay": "🙂",
+        "Excited": "🤩",
+        "Confused": "😕",
+        "Frustrated": "😤",
+        "Overwhelmed": "😢",
+        "Bored": "😴",
+        "Offended": "😡",
+        "Surprised": "😲"
+    }
+    
+    created_at = dt.datetime.utcnow().isoformat()
+    
+    with engine.begin() as conn:
+        # Verify document belongs to this teacher
+        doc = conn.execute(
+            text("SELECT id, filename FROM documents WHERE id=:id AND (uploaded_by=:user_id OR uploaded_by IS NULL)"),
+            {"id": doc_id, "user_id": user['id']}
+        ).first()
+        
+        if not doc:
+            abort(404)
+        
+        # Get all test users (test_user1 through test_user100)
+        test_users = []
+        for i in range(1, 101):
+            username = f"test_user{i}"
+            user_row = conn.execute(
+                text("SELECT id FROM users WHERE username = :username"),
+                {"username": username}
+            ).first()
+            if user_row:
+                test_users.append(user_row.id)
+        
+        if not test_users:
+            return redirect(url_for("list_users") + "?error=no_test_users")
+        
+        # Get all pages for this document
+        pages = conn.execute(
+            text("SELECT id, page_index FROM pages WHERE document_id=:doc_id ORDER BY page_index ASC"),
+            {"doc_id": doc_id}
+        ).fetchall()
+        
+        if not pages:
+            abort(404)
+        
+        # Generate emotions for each test user for each page
+        # Create page-based emotion hotspots - certain pages will have high concentrations of certain emotions
+        num_pages = len(pages)
+        
+        # Create page emotion hotspots - pages with high concentrations of specific emotions
+        # NOTE: We don't create offended hotspots - offended should only come from individual sequences
+        page_emotion_hotspots = {}  # {page_idx: {'emotion': str, 'intensity': float}}
+        
+        # Add bored hotspots (1-3 pages, but no more than available)
+        available_for_bored = [i for i in range(num_pages) if i not in page_emotion_hotspots]
+        if available_for_bored:
+            max_bored_hotspots = min(3, max(1, num_pages // 4))
+            num_bored_hotspots = random.randint(1, min(max_bored_hotspots, len(available_for_bored)))
+            if num_bored_hotspots > 0:
+                bored_hotspot_pages = random.sample(available_for_bored, num_bored_hotspots)
+                for page_idx in bored_hotspot_pages:
+                    page_emotion_hotspots[page_idx] = {'emotion': 'Bored', 'intensity': random.uniform(0.35, 0.6)}
+        
+        # Add excited hotspots (1-3 pages, but no more than available)
+        available_for_excited = [i for i in range(num_pages) if i not in page_emotion_hotspots]
+        if available_for_excited:
+            max_excited_hotspots = min(3, max(1, num_pages // 4))
+            num_excited_hotspots = random.randint(1, min(max_excited_hotspots, len(available_for_excited)))
+            if num_excited_hotspots > 0:
+                excited_hotspot_pages = random.sample(available_for_excited, num_excited_hotspots)
+                for page_idx in excited_hotspot_pages:
+                    page_emotion_hotspots[page_idx] = {'emotion': 'Excited', 'intensity': random.uniform(0.3, 0.55)}
+        
+        # Add confused hotspots (1-2 pages, but no more than available)
+        available_for_confused = [i for i in range(num_pages) if i not in page_emotion_hotspots]
+        if available_for_confused:
+            max_confused_hotspots = min(2, max(1, num_pages // 5))
+            num_confused_hotspots = random.randint(1, min(max_confused_hotspots, len(available_for_confused)))
+            if num_confused_hotspots > 0:
+                confused_hotspot_pages = random.sample(available_for_confused, num_confused_hotspots)
+                for page_idx in confused_hotspot_pages:
+                    page_emotion_hotspots[page_idx] = {'emotion': 'Confused', 'intensity': random.uniform(0.3, 0.5)}
+        
+        # Create individual student patterns
+        # Offended: Many students (40-50) for pronounced spikes of 2-3 pages
+        num_offended = min(50, max(40, len(test_users) // 2))  # 40-50 students for pronounced spikes
+        offended_students = random.sample(test_users, num_offended)
+        
+        # Bored: Some students with longer sequences (5-6 pages)
+        bored_students = random.sample([u for u in test_users if u not in offended_students], min(12, len(test_users) - len(offended_students)))
+        
+        # Confused: Some students with longer sequences (5-6 pages)
+        confused_students = random.sample([u for u in test_users if u not in offended_students + bored_students], min(10, len(test_users) - len(offended_students) - len(bored_students)))
+        
+        # Surprised: Few students for mild spikes
+        surprised_students = random.sample([u for u in test_users if u not in offended_students + bored_students + confused_students], min(8, len(test_users) - len(offended_students) - len(bored_students) - len(confused_students)))
+        
+        excited_students = random.sample([u for u in test_users if u not in offended_students + bored_students + confused_students + surprised_students], min(8, len(test_users) - len(offended_students) - len(bored_students) - len(confused_students) - len(surprised_students)))
+        
+        # Track offended sequences per student - ALL offended students get sequences (2-3 pages each)
+        # Cluster sequences tightly to create pronounced spikes with ~50 students per spike
+        student_offended_sequences = {}  # {user_id: [(start_page_idx, end_page_idx), ...]}
+        
+        if len(pages) > 2:
+            # Create 1-2 cluster points where ALL students in each cluster have overlapping sequences
+            # This ensures spikes of ~40-50 students
+            num_clusters = min(2, max(1, len(pages) // 6))  # 1-2 clusters for bigger spikes
+            cluster_centers = sorted(random.sample(range(2, max(3, len(pages) - 2)), num_clusters))
+            
+            # Distribute offended students evenly across clusters for maximum overlap
+            students_per_cluster = len(offended_students) // num_clusters
+            cluster_assignments = {}
+            for i, cluster_center in enumerate(cluster_centers):
+                start_idx = i * students_per_cluster
+                end_idx = (i + 1) * students_per_cluster if i < num_clusters - 1 else len(offended_students)
+                cluster_assignments[cluster_center] = offended_students[start_idx:end_idx]
+            
+            # Assign sequences - ALL students in a cluster get sequences starting at EXACTLY the same page
+            for cluster_center, cluster_students in cluster_assignments.items():
+                # All students in this cluster start at the exact same page for maximum overlap
+                start_page_idx = max(0, min(cluster_center, len(pages) - 3))
+                # Use same sequence length (2-3 pages) for all in cluster to maximize overlap
+                sequence_length = random.randint(2, min(3, len(pages) - start_page_idx))
+                end_page_idx = start_page_idx + sequence_length - 1
+                
+                for user_id in cluster_students:
+                    sequences = []
+                    # All students in cluster have identical sequences for maximum overlap
+                    sequences.append((start_page_idx, end_page_idx))
+                    student_offended_sequences[user_id] = sequences
+        
+        # Track bored sequences per student - ALL bored students get sequences (5-6 consecutive pages)
+        student_bored_sequences = {}  # {user_id: [(start_page_idx, end_page_idx), ...]}
+        for user_id in bored_students:  # All bored students get sequences
+            if len(pages) > 5:
+                num_sequences = random.randint(1, 2)  # 1-2 sequences per student
+                sequences = []
+                for _ in range(num_sequences):
+                    start_page_idx = random.randint(0, max(0, len(pages) - 6))
+                    sequence_length = random.randint(5, min(6, len(pages) - start_page_idx))  # 5-6 pages for bored
+                    end_page_idx = start_page_idx + sequence_length - 1
+                    sequences.append((start_page_idx, end_page_idx))
+                student_bored_sequences[user_id] = sequences
+        
+        # Track confused sequences per student - ALL confused students get sequences (5-6 consecutive pages)
+        student_confused_sequences = {}  # {user_id: [(start_page_idx, end_page_idx), ...]}
+        for user_id in confused_students:  # All confused students get sequences
+            if len(pages) > 5:
+                num_sequences = random.randint(1, 2)  # 1-2 sequences per student
+                sequences = []
+                for _ in range(num_sequences):
+                    start_page_idx = random.randint(0, max(0, len(pages) - 6))
+                    sequence_length = random.randint(5, min(6, len(pages) - start_page_idx))  # 5-6 pages for confused
+                    end_page_idx = start_page_idx + sequence_length - 1
+                    sequences.append((start_page_idx, end_page_idx))
+                student_confused_sequences[user_id] = sequences
+        
+        # Track surprised sequences per student - Few students get sequences for mild spikes (2-3 pages)
+        student_surprised_sequences = {}  # {user_id: [(start_page_idx, end_page_idx), ...]}
+        for user_id in surprised_students[:5]:  # Only 5 out of 8 get sequences for mild spikes
+            if len(pages) > 2:
+                num_sequences = random.randint(1, 1)  # Only 1 sequence per student for mild spikes
+                sequences = []
+                for _ in range(num_sequences):
+                    start_page_idx = random.randint(0, max(0, len(pages) - 3))
+                    sequence_length = random.randint(2, min(3, len(pages) - start_page_idx))  # 2-3 pages for surprised
+                    end_page_idx = start_page_idx + sequence_length - 1
+                    sequences.append((start_page_idx, end_page_idx))
+                student_surprised_sequences[user_id] = sequences
+        
+        reactions_created = 0
+        
+        for page_idx, page in enumerate(pages):
+            page_id = page.id
+            page_index = page.page_index
+            
+            # Check if this page has an emotion hotspot
+            page_hotspot = page_emotion_hotspots.get(page_idx)
+            hotspot_emotion = page_hotspot['emotion'] if page_hotspot else None
+            hotspot_intensity = page_hotspot['intensity'] if page_hotspot else 0
+            
+            # Determine which users will be affected by the hotspot
+            if hotspot_emotion:
+                num_hotspot_users = max(1, int(len(test_users) * hotspot_intensity))
+                num_hotspot_users = min(num_hotspot_users, len(test_users))  # Ensure we don't try to sample more than available
+                if num_hotspot_users > 0:
+                    hotspot_affected_users = set(random.sample(test_users, num_hotspot_users))
+                else:
+                    hotspot_affected_users = set()
+            else:
+                hotspot_affected_users = set()
+            
+            for user_id in test_users:
+                # Determine emotion for this user on this page
+                emoji = None
+                in_offended_sequence = False
+                in_bored_sequence = False
+                in_confused_sequence = False
+                in_surprised_sequence = False
+                
+                # Check if user is in an offended sequence (individual pattern) - takes priority
+                if user_id in student_offended_sequences:
+                    for start_idx, end_idx in student_offended_sequences[user_id]:
+                        if start_idx <= page_idx <= end_idx:
+                            in_offended_sequence = True
+                            break
+                    if in_offended_sequence:
+                        emoji = emojis["Offended"]
+                
+                # Check if user is in a bored sequence (individual pattern) - 5-6 pages
+                # Only check if not already in an offended sequence
+                if not in_offended_sequence and user_id in student_bored_sequences:
+                    for start_idx, end_idx in student_bored_sequences[user_id]:
+                        if start_idx <= page_idx <= end_idx:
+                            in_bored_sequence = True
+                            break
+                    if in_bored_sequence:
+                        emoji = emojis["Bored"]
+                
+                # Check if user is in a confused sequence (individual pattern) - 5-6 pages
+                # Only check if not already in an offended or bored sequence
+                if not in_offended_sequence and not in_bored_sequence and user_id in student_confused_sequences:
+                    for start_idx, end_idx in student_confused_sequences[user_id]:
+                        if start_idx <= page_idx <= end_idx:
+                            in_confused_sequence = True
+                            break
+                    if in_confused_sequence:
+                        emoji = emojis["Confused"]
+                
+                # Check if user is in a surprised sequence (individual pattern) - 2-3 pages for mild spikes
+                # Only check if not already in another sequence
+                if not in_offended_sequence and not in_bored_sequence and not in_confused_sequence and user_id in student_surprised_sequences:
+                    for start_idx, end_idx in student_surprised_sequences[user_id]:
+                        if start_idx <= page_idx <= end_idx:
+                            in_surprised_sequence = True
+                            break
+                    if in_surprised_sequence:
+                        emoji = emojis["Surprised"]
+                
+                # Assign emotion if not already assigned by a sequence (sequences take absolute priority)
+                # If emoji is already set to "Offended", "Bored", "Confused", or "Surprised", skip all other logic
+                if emoji is None:
+                    # Check if this user is affected by page hotspot
+                    # NOTE: "Offended" is NOT assigned from hotspots - only from sequences
+                    if user_id in hotspot_affected_users and hotspot_emotion and hotspot_emotion != 'Offended':
+                        # User is in a hotspot - high chance of hotspot emotion, but some variation
+                        if hotspot_emotion == 'Bored':
+                            emoji = random.choices(
+                                [emojis["Bored"], emojis["Okay"], emojis["Confused"]],
+                                weights=[75, 20, 5]
+                            )[0]
+                        elif hotspot_emotion == 'Excited':
+                            emoji = random.choices(
+                                [emojis["Excited"], emojis["Okay"], emojis["Surprised"]],
+                                weights=[75, 20, 5]
+                            )[0]
+                        elif hotspot_emotion == 'Confused':
+                            emoji = random.choices(
+                                [emojis["Confused"], emojis["Okay"], emojis["Frustrated"]],
+                                weights=[70, 25, 5]
+                            )[0]
+                    # Individual student patterns (only if not in hotspot or sequence)
+                    # IMPORTANT: Don't assign to offended students if they're not in a sequence - they should get "Okay" or other emotions
+                    elif user_id in bored_students and not in_bored_sequence and user_id not in offended_students:
+                        # Bored students not in a sequence: mostly bored, occasionally okay
+                        emoji = random.choices(
+                            [emojis["Bored"], emojis["Okay"]],
+                            weights=[60, 40]
+                        )[0]
+                    elif user_id in confused_students and not in_confused_sequence and user_id not in offended_students:
+                        # Confused students not in a sequence: mix of confused and okay, occasionally overwhelmed
+                        emoji = random.choices(
+                            [emojis["Confused"], emojis["Okay"], emojis["Frustrated"], emojis["Overwhelmed"]],
+                            weights=[43, 43, 10, 4]
+                        )[0]
+                    elif user_id in surprised_students and not in_surprised_sequence and user_id not in offended_students:
+                        # Surprised students not in a sequence: rarely surprised (should be mostly zero)
+                        emoji = random.choices(
+                            [emojis["Okay"], emojis["Surprised"], emojis["Excited"]],
+                            weights=[90, 5, 5]
+                        )[0]
+                    elif user_id in offended_students and not in_offended_sequence:
+                        # Offended students NOT in a sequence should get "Okay" or other emotions, NOT "Offended"
+                        emoji = random.choices(
+                            [emojis["Okay"], emojis["Frustrated"], emojis["Confused"]],
+                            weights=[80, 15, 5]
+                        )[0]
+                    elif user_id in excited_students:
+                        # Excited students: mix of excited and okay
+                        emoji = random.choices(
+                            [emojis["Excited"], emojis["Okay"], emojis["Surprised"]],
+                            weights=[35, 55, 10]
+                        )[0]
+                    else:
+                        # Regular students: mostly okay, but influenced by page context
+                        if page_hotspot and random.random() < 0.3:
+                            # Some regular students also affected by hotspot (30% chance)
+                            emoji = random.choices(
+                                [emojis[hotspot_emotion], emojis["Okay"]],
+                                weights=[60, 40]
+                            )[0]
+                        else:
+                            # Regular students: mostly okay, occasional variation (including rare Overwhelmed)
+                            # NOTE: "Offended" and "Surprised" are NOT included here - they only come from sequences
+                            emoji = random.choices(
+                                [emojis["Okay"], emojis["Excited"], emojis["Confused"], emojis["Bored"], emojis["Frustrated"], emojis["Overwhelmed"]],
+                                weights=[70, 10, 6, 6, 5, 3]
+                            )[0]
+                
+                # Upsert reaction (update if exists, insert if not)
+                result = conn.execute(
+                    text("""
+                        UPDATE reactions 
+                        SET emoji = :emoji, created_at = :created_at
+                        WHERE page_id = :page_id AND user_id = :user_id
+                    """),
+                    {
+                        "emoji": emoji,
+                        "created_at": created_at,
+                        "page_id": page_id,
+                        "user_id": user_id
+                    }
+                )
+                
+                if result.rowcount == 0:
+                    # No existing reaction, insert new one
+                    conn.execute(
+                        text("""
+                            INSERT INTO reactions (page_id, user_id, emoji, created_at)
+                            VALUES (:page_id, :user_id, :emoji, :created_at)
+                        """),
+                        {
+                            "page_id": page_id,
+                            "user_id": user_id,
+                            "emoji": emoji,
+                            "created_at": created_at
+                        }
+                    )
+                    reactions_created += 1
+                else:
+                    reactions_created += 1
+    
+    return redirect(url_for("view_plot", doc_id=doc_id) + f"?simulated={reactions_created}")
+
 @app.route("/documents/<doc_id>/view-plot", methods=["GET"])
 @teacher_required
 def view_plot(doc_id):
@@ -1825,12 +2213,12 @@ def view_plot(doc_id):
         "😤": "Frustrated",
         "😢": "Overwhelmed",
         "😴": "Bored",
-        "😡": "Triggered",
+        "😡": "Offended",
         "😲": "Surprised"
     }
     
     # Emotion order for y-axis (same as in the app)
-    emotion_order = ["Excited", "Okay", "Confused", "Frustrated", "Overwhelmed", "Bored", "Triggered", "Surprised"]
+    emotion_order = ["Excited", "Okay", "Confused", "Frustrated", "Overwhelmed", "Bored", "Offended", "Surprised"]
     
     user = get_current_user()
     
